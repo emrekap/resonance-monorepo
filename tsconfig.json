@@ -1,0 +1,9 @@
+{
+  "//": "Root anchor for editors. Each app/package has its own tsconfig extending @repo/tsconfig.",
+  "extends": "./packages/tsconfig/base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [],
+  "exclude": ["node_modules", "apps", "packages"]
+}

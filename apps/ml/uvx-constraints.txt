@@ -1,0 +1,8 @@
+# Constraints applied to the ephemeral `uvx whisperx` environment that tribev2
+# spawns for audio transcription (via UV_CONSTRAINT in main.py).
+#
+# Newer torchaudio (>=2.9) removed `torchaudio.list_audio_backends()`, which the
+# pyannote.audio version pulled in by whisperx still calls at import time. Pin the
+# torch stack to the last line that still provides it.
+torch<2.9
+torchaudio<2.9

@@ -1,0 +1,12 @@
+{
+  "name": "@repo/tsconfig",
+  "version": "0.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "files": [
+    "base.json",
+    "bun.json",
+    "nextjs.json",
+    "react-native.json"
+  ]
+}

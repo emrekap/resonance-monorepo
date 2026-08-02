@@ -1,0 +1,22 @@
+# Keep the build context small and never bake secrets/local state into the image.
+# (On the Space these are already excluded from the pushed repo by .gitignore;
+#  this file matters for local `docker build` testing.)
+.venv/
+venv/
+cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Secrets — use HF Space secrets, never bake the token into a layer.
+.env
+
+# VCS / editor / OS
+.git/
+.gitignore
+.idea/
+.vscode/
+.DS_Store
+
+# Plans / scratch
+*.md.orig

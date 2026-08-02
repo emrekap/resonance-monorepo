@@ -1,0 +1,55 @@
+# ── Tested on Python 3.11.15 (exca 0.5.20 requires Python >=3.11) ────────────
+# Install with:
+#   pip install -r requirements.txt \
+#     --index-url https://download.pytorch.org/whl/cpu \
+#     --extra-index-url https://pypi.org/simple
+#
+# Two follow-up steps are required for the /analyze/* endpoints to work:
+#   1. Install uv (provides `uvx`); tribev2 runs `uvx whisperx` to transcribe
+#      audio, and whisperx needs ffmpeg on PATH:
+#        curl -LsSf https://astral.sh/uv/install.sh | sh   # uv + uvx
+#        brew install ffmpeg                               # macOS
+#   2. Run the idempotent post-install patcher (fixes tribev2's hardcoded
+#      float16 whisperx compute_type, which fails on CPU):
+#        python postinstall.py
+
+# ── PyTorch (must come from PyTorch's index, not PyPI) ───────────────────────
+torch==2.6.0
+torchaudio==2.6.0
+torchvision==0.21.0
+
+# ── tribev2 core deps ────────────────────────────────────────────────────────
+exca==0.5.20
+neuralset==0.0.2
+neuraltrain==0.0.2
+
+# ── TRIBE v2 — installed without deps (we manage them manually above) ────────
+git+https://github.com/facebookresearch/tribev2.git
+
+# ── tribev2 remaining deps (incl. ones it imports directly) ──────────────────
+transformers>=4.46.0
+numpy==2.2.6
+huggingface_hub       # hf_hub_download — fetch checkpoint/config from the Hub
+pyyaml                # config.yaml loading
+requests              # download_file helper
+submitit
+hydra-core
+omegaconf
+einops
+av                    # PyAV — video decoding
+soundfile
+librosa
+
+# ── Web framework & server ────────────────────────────────────────────────────
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+python-dotenv>=1.0.0   # load HF_TOKEN and config from .env
+
+# ── Optional: text endpoint (TextToEvents) needs TTS + language detection ────
+# gtts
+# langdetect
+
+# ── Optional brain visualisation (uncomment if needed) ───────────────────────
+# nilearn>=0.10
+# pyvista>=0.43

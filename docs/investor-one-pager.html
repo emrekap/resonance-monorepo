@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Resonance - Investor One-Pager</title>
+    <style>
+      :root {
+        --ink: #151a24;
+        --muted: #5b6472;
+        --line: #e3e7ee;
+        --accent: #5b3df5;
+        --accent2: #0ea5a4;
+        --bg: #ffffff;
+        --chip: #f3f2fe;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font:
+          12px/1.5 -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Roboto,
+          Helvetica,
+          Arial,
+          sans-serif;
+        color: var(--ink);
+        background: #f5f6f8;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .page {
+        width: 8.27in;
+        min-height: 11.69in;
+        margin: 16px auto;
+        background: var(--bg);
+        padding: 0.5in 0.55in;
+        box-shadow: 0 4px 24px rgba(20, 26, 36, 0.1);
+        position: relative;
+      }
+      header {
+        border-bottom: 2px solid var(--ink);
+        padding-bottom: 8px;
+        margin-bottom: 10px;
+      }
+      .brand {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      h1 {
+        font-size: 21px;
+        margin: 0;
+        letter-spacing: -0.2px;
+      }
+      h1 .em {
+        color: var(--accent);
+        font-weight: 400;
+        font-style: italic;
+        font-size: 15px;
+      }
+      .ask {
+        font-weight: 700;
+        color: #fff;
+        background: var(--accent);
+        padding: 3px 9px;
+        border-radius: 20px;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .subline {
+        color: var(--muted);
+        margin-top: 4px;
+        font-size: 11px;
+      }
+      .cols {
+        column-count: 2;
+        column-gap: 20px;
+      }
+      section {
+        break-inside: avoid;
+        margin: 0 0 9px;
+      }
+      h2 {
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.7px;
+        color: var(--accent);
+        margin: 0 0 3px;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 2px;
+      }
+      p {
+        margin: 0 0 4px;
+      }
+      ul {
+        margin: 0;
+        padding-left: 15px;
+      }
+      li {
+        margin: 1px 0;
+      }
+      b,
+      strong {
+        color: var(--ink);
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .steps {
+        counter-reset: s;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .steps li {
+        position: relative;
+        padding-left: 20px;
+        margin: 3px 0;
+      }
+      .steps li::before {
+        counter-increment: s;
+        content: counter(s);
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--accent);
+        color: #fff;
+        font-size: 9px;
+        font-weight: 700;
+        text-align: center;
+        line-height: 14px;
+      }
+      .kpis {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin: 4px 0;
+      }
+      .kpi {
+        background: var(--chip);
+        border: 1px solid #e6e3fc;
+        border-radius: 6px;
+        padding: 4px 7px;
+        font-size: 10px;
+      }
+      .kpi b {
+        display: block;
+        font-size: 13px;
+        color: var(--accent);
+      }
+      .funds span {
+        display: inline-block;
+        background: #eef7f6;
+        border: 1px solid #cdeceb;
+        color: #0b6b6a;
+        border-radius: 5px;
+        padding: 2px 6px;
+        margin: 2px 3px 0 0;
+        font-size: 10px;
+      }
+      .fill {
+        background: #fff7ed;
+        border: 1px dashed #f0b95a;
+        border-radius: 5px;
+        padding: 2px 5px;
+        color: #a15b00;
+        font-size: 10px;
+      }
+      footer {
+        border-top: 1px solid var(--line);
+        margin-top: 8px;
+        padding-top: 6px;
+        font-size: 8.6px;
+        color: var(--muted);
+      }
+      footer b {
+        color: var(--ink);
+      }
+      a {
+        color: inherit;
+      }
+      @page {
+        size: A4;
+        margin: 0;
+      }
+      @media print {
+        body {
+          background: #fff;
+        }
+        .page {
+          margin: 0;
+          box-shadow: none;
+          width: auto;
+          min-height: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <div class="brand">
+          <h1>
+            Resonance
+            <span class="em"
+              >~ know what your audience will love, before you post</span
+            >
+          </h1>
+          <span class="ask">Pre-seed · $600K</span>
+        </div>
+        <div class="subline">
+          AI content-resonance prediction for creators &amp; brands ·
+          <span class="fill">resonance</span>
+        </div>
+      </header>
+
+      <div class="cols">
+        <section>
+          <h2>Problem</h2>
+          <p>
+            Creators and brands publish
+            <b>billions of posts a year on gut feel</b>, and most underperform.
+            Feedback arrives only <i>after</i> publishing. The one way to test
+            content in advance - lab-based audience/neuromarketing panels - is
+            slow, costs tens of thousands, and is reserved for big brands.
+            Nobody can answer the question that matters before hitting "post":
+            <b>will this actually resonate?</b>
+          </p>
+        </section>
+
+        <section>
+          <h2>Solution</h2>
+          <p>
+            A mobile app: upload an image, video (reel/post), or audio and get
+            an instant <b>Resonance Score (0–100)</b> plus concrete fixes -
+            <i>before</i> you publish. Predictions are
+            <b>grounded in neuroscience</b> and
+            <b>personalized to your real audience</b>, not a generic average.
+          </p>
+          <p>
+            <b>Two ways in.</b> A creator checks a reel before posting. A
+            <b>brand's marketing team pre-tests a new commercial</b> - e.g. a
+            beverage company with a 30-second spot: compare edits, find the
+            weakest three seconds, forecast response
+            <b>before a seven-figure media buy</b>. For brands, every point of
+            wasted ad spend avoided is the ROI.
+          </p>
+        </section>
+
+        <section>
+          <h2>Why it works - &amp; why it's defensible</h2>
+          <ol class="steps">
+            <li>
+              <b>Proven science.</b> Built on <b>TRIBE</b>, Meta FAIR's trimodal
+              brain-encoder that
+              <b>won the Algonauts 2025 challenge over 260+ teams</b> - turning
+              any clip into fine-grained, per-segment neuro-response features.
+            </li>
+            <li>
+              <b>Calibrated to reality.</b> Raw brain-response isn't engagement,
+              and we don't pretend it is. Users
+              <b>connect Instagram / TikTok / YouTube</b>; we train a
+              proprietary model mapping neuro-features to
+              <b>their real post performance</b>. Independent research confirms
+              the path: a naive global signal fails, but
+              <b
+                >region-specific, segment-level features calibrated on real
+                data</b
+              >
+              is exactly what's needed.
+            </li>
+            <li>
+              <b>Data flywheel = moat.</b> Every connected account &amp; post
+              outcome becomes labeled training data → a better, more
+              personalized model rivals can't replicate.
+            </li>
+          </ol>
+        </section>
+
+        <section>
+          <h2>Product</h2>
+          <ul>
+            <li><b>Resonance Score</b> per asset, pre-post.</li>
+            <li>
+              <b>Engagement curve over the timeline</b> - "hook lands at 0:02,
+              dip at 0:07 - trim it."
+            </li>
+            <li>
+              <b>A/B variants</b> - pick the predicted winner from 2–3
+              cuts/thumbnails.
+            </li>
+            <li><b>Audience personalization</b> from connected accounts.</li>
+            <li><b>Tips</b> - hook, length, caption/hashtags, posting time.</li>
+            <li>
+              <b>Brand/agency dashboard + API</b> - the monetization surface.
+            </li>
+            <li>
+              <b>Advisory for high-stakes launches (enterprise)</b> - AI insight
+              + human subject-matter experts to guide seven-figure creative
+              decisions.
+            </li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Market</h2>
+          <div class="kpis">
+            <div class="kpi">
+              <b>$250B→$800B</b>creator economy '25→'30 (~26% CAGR)
+            </div>
+            <div class="kpi"><b>~1000×</b>cheaper than lab neuromarketing</div>
+          </div>
+          <p class="muted">
+            <b>SAM:</b> creators +
+            <b>brand/agency teams pre-testing ad creative</b> before a media
+            buy. <b>SOM:</b> short-form creators + DTC brands running paid
+            social. We democratize the slow ~$1.5B neuromarketing panel business
+            to 200M+ creators.
+          </p>
+        </section>
+
+        <section>
+          <h2>Business model</h2>
+          <p>
+            <b>Usage-based credits</b> - free trial credits, then creators buy
+            packs and brands/agencies buy volume + API. Pricing tracks GPU cost;
+            <b>margin expands</b> as our lighter proprietary model replaces the
+            heavy MVP stack. A premium <b>enterprise advisory tier</b> (AI
+            insight + expert guidance) lifts ACV on the largest accounts.
+          </p>
+        </section>
+
+        <section>
+          <h2>Why now</h2>
+          <p>
+            Multimodal foundation models just matured (V-JEPA 2, Llama 3.2,
+            Wav2Vec-BERT), and
+            <b>Algonauts 2025 put lab-grade brain modeling in software</b> -
+            while short-form video dominates attention and GPU inference is
+            finally cheap enough to score one clip at a time.
+          </p>
+        </section>
+
+        <section>
+          <h2>Competition &amp; moat</h2>
+          <p>
+            Dashboards (Hootsuite, Sprout) describe the past; heuristic tools
+            (vidIQ, TubeBuddy) guess from history; AI tools (Captions, Opus)
+            <i>generate</i> but don't predict; neuromarketing (Nielsen) is
+            lab-bound &amp; enterprise-only.
+            <b
+              >None predict pre-post, personalized, neuro-grounded resonance.</b
+            >
+            Moat = model <b>+</b> proprietary per-creator data flywheel.
+          </p>
+        </section>
+
+        <section>
+          <h2>Traction &amp; 12-mo milestones</h2>
+          <p>
+            Today: <b>working TRIBE-powered inference prototype</b> (live API).
+            On $600K: private beta → first proprietary calibrated model (v1) →
+            measurable prediction lift vs. baseline → convert beta to paid
+            credits → metrics to raise a seed.
+          </p>
+        </section>
+
+        <section>
+          <h2>The ask - $600K pre-seed</h2>
+          <p class="muted">~12–15 months runway:</p>
+          <div class="funds">
+            <span>50% ML/eng team</span><span>15% GPU/infra &amp; data</span>
+            <span>10% product/design</span><span>10% GTM &amp; creators</span>
+            <span>5% brand/enterprise pilots &amp; advisory</span
+            ><span>10% ops/legal/buffer</span>
+          </div>
+        </section>
+
+        <section>
+          <h2>Team</h2>
+          <p>
+            <span class="fill">Emre Kaplan - engineer / founder</span>
+          </p>
+        </section>
+      </div>
+
+      <footer>
+        <b>IP note:</b> TRIBE powers MVP validation only
+        (research/non-commercial-licensed weights); the commercial product ships
+        an independently trained model on openly-licensed encoders + proprietary
+        engagement data. &nbsp;<b>Sources:</b> Meta wins Algonauts 2025
+        (startuphub.ai); TRIBE, arXiv 2507.22229; global brain-drive ≠ YouTube
+        engagement, arXiv 2607.01400; creator economy (Grand View Research,
+        Precedence Research); neuromarketing (market.us).
+      </footer>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "@repo/api-contract",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@repo/api": "*",
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@repo/tsconfig": "*",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "//": "Emits ONLY the .d.ts type boundary (AppType) so consumers import types, not Bun-runtime source. Bun still runs src/ directly.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*.ts"]
+}
