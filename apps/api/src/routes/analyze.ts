@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { randomUUIDv7 } from 'bun';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
@@ -30,7 +31,7 @@ export const analyze = new Hono()
   .post('/', zValidator('json', analyzeBody), (c) => {
     const { mediaUrl, modality } = c.req.valid('json');
     const job: Job = {
-      jobId: crypto.randomUUID(),
+      jobId: randomUUIDv7(),
       status: 'queued',
       mediaUrl,
       modality,
