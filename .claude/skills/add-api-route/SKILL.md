@@ -30,6 +30,7 @@ JSON with `c.json(...)`.
 
 ```ts
 import { Hono } from 'hono';
+import { randomUUIDv7 } from 'bun';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
@@ -38,7 +39,7 @@ const body = z.object({ name: z.string().min(1) });
 export const widgets = new Hono()
   .post('/', zValidator('json', body), (c) => {
     const { name } = c.req.valid('json');
-    return c.json({ id: crypto.randomUUID(), name }, 201);
+    return c.json({ id: randomUUIDv7(), name }, 201);
   })
   .get('/:id', (c) => c.json({ id: c.req.param('id') }));
 ```

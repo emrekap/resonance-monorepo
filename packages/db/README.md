@@ -130,6 +130,11 @@ bun run scripts/set-role-passwords.ts   # after rotating a password in .env
 Copy `.env.example` to `.env`. Four URLs: `DIRECT_DATABASE_URL` (migrations), `DATABASE_URL`
 (owner, admin scripts), `APP_USER_DATABASE_URL` (request path), `APP_SERVICE_DATABASE_URL` (worker).
 
+Both clients **connect on first use, not on import**, so a consumer only configures the URL it
+actually uses — `apps/api` sets `APP_USER_DATABASE_URL` alone and never holds the BYPASSRLS
+password. Constructing them eagerly would hand the request path the exact credential the role split
+exists to withhold.
+
 Two things that bite on Supabase:
 
 - **The direct host `db.<ref>.supabase.co` is IPv6-only.** With no IPv6 route, point

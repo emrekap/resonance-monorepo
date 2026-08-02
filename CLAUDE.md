@@ -112,11 +112,14 @@ RN options win). All are type-check only (`noEmit`); the one exception is `apps/
 
 - `AppType` d.ts), `packages/api-contract` (RPC client), `apps/ml` (Python service copied from
   `../tribev2-api`), `packages/db` (Prisma 7 schema + migrations on Supabase Postgres, 23 tables,
-  RLS enforced and verified — see [`packages/db/README.md`](packages/db/README.md)).
-  **TODO:** wire `apps/api` to `@repo/db` (replace the in-memory job `Map` in `routes/analyze.ts`,
-  add Supabase JWT middleware → `withUser`); Redis/BullMQ queue in api; refactor `apps/ml` to a queue worker; generate `@repo/ml-client`
-  from the ml OpenAPI; `packages/db` (Prisma: users, connected accounts, posts, jobs, results);
-  scaffold `apps/mobile` + `apps/web`.
+  RLS enforced and verified — see [`packages/db/README.md`](packages/db/README.md)), `apps/api`
+  wired to `@repo/db`: Supabase JWT (ES256/JWKS) middleware → `c.var.db` = `withUser` bound to the
+  caller, `/analyze` persisted in `analyses` + `media_assets` (see
+  [`apps/api/README.md`](apps/api/README.md)).
+  **TODO:** Redis/BullMQ queue in api (`POST /analyze` records the job but nothing consumes it yet);
+  Supabase Storage signed-upload flow so `media_assets` holds real objects instead of the
+  `external` bucket placeholder; refactor `apps/ml` to a queue worker; generate `@repo/ml-client`
+  from the ml OpenAPI; scaffold `apps/mobile` + `apps/web`.
 
 ## Conventions
 

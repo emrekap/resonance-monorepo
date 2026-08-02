@@ -10,6 +10,7 @@
  * Safe to run against the dev project: every row it creates hangs off the two
  * auth users it creates, and deleting those cascades it all away.
  */
+import { randomUUIDv7 } from 'bun';
 import 'dotenv/config';
 import { Client } from 'pg';
 import { prisma, prismaService, withUser, withAnon } from '../src/index.ts';
@@ -42,8 +43,8 @@ async function denied(label: string, fn: () => Promise<unknown>) {
   }
 }
 
-const userA = crypto.randomUUID();
-const userB = crypto.randomUUID();
+const userA = randomUUIDv7();
+const userB = randomUUIDv7();
 
 try {
   console.log('\nsetup: two auth users (the signup trigger builds their workspaces)');
