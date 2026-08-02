@@ -1,0 +1,21 @@
+# Vendored agent skills — upstream content, reformatting them is pure diff noise.
+.agents/
+
+# Generated
+packages/db/src/generated/
+dist/
+.next/
+.expo/
+.turbo/
+
+# Prisma migrations are SQL emitted by the CLI (plus hand-written blocks) —
+# prettier does not format .sql, but keep the directory out of scope anyway.
+packages/db/prisma/migrations/
+
+# Lockfiles
+bun.lock
+bun.lockb
+skills-lock.json
+
+# MCP config — keep as authored
+.mcp.json

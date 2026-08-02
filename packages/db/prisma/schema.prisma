@@ -1,0 +1,786 @@
+// Resonance app data model — the single schema owner (see packages/db/README.md).
+//
+// Naming: PascalCase/camelCase in TypeScript, snake_case in Postgres.
+//   model AnalysisResult -> table  analysis_results      (@@map, plural)
+//   field resonanceScore -> column resonance_score       (@map)
+//   enum  WorkspaceKind  -> type   workspace_kind_enum   (@@map, singular + _enum)
+//
+// RLS is NOT expressible here — it lives in the migration SQL. Every table is
+// rooted at a workspace_id or profile_id so it has an ownership predicate to
+// write a policy against.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated"
+  runtime  = "bun"
+}
+
+// Prisma 7: no `url` / `directUrl` here. Migration URLs live in
+// prisma.config.ts (`datasource.url`); the runtime client gets a driver adapter
+// (see src/client.ts).
+//
+// `auth` is deliberately NOT listed. Supabase owns that schema (users, sessions,
+// identities, sso_*, webauthn_*, …) and GoTrue adds tables across versions — the
+// moment Prisma can see the schema it treats every table it doesn't know about
+// as drift and wants to reset it. `profiles.id` therefore mirrors `auth.users.id`
+// through triggers rather than a cross-schema foreign key (which would force
+// `auth` back into this list). See the security migration.
+datasource db {
+  provider = "postgresql"
+  schemas  = ["public"]
+}
+
+// ─── Identity ────────────────────────────────────────────────────────────────
+
+model Profile {
+  /// == auth.users.id. Created by the on_auth_user_created trigger and removed
+  /// by on_auth_user_deleted, which cascades through every FK below it. Never
+  /// insert a profile directly — it would have no auth user behind it.
+  id          String    @id @db.Uuid
+  displayName String?   @map("display_name")
+  avatarUrl   String?   @map("avatar_url")
+  locale      String?
+  timezone    String?
+  onboardedAt DateTime? @map("onboarded_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  memberships       WorkspaceMember[]
+  connectedAccounts ConnectedAccount[]
+  uploadedMedia     MediaAsset[]
+  requestedAnalyses Analysis[]
+  deletionRequests  DataDeletionRequest[]
+
+  @@map("profiles")
+  @@schema("public")
+}
+
+/// The tenancy anchor. Every profile gets an auto-created PERSONAL workspace on
+/// signup (see private.handle_new_user), so solo creators never see the concept;
+/// brand/agency teams are the same shape with more members.
+model Workspace {
+  id        String        @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  kind      WorkspaceKind @default(PERSONAL)
+  name      String
+  slug      String        @unique
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt DateTime?     @map("deleted_at") @db.Timestamptz(6)
+
+  members            WorkspaceMember[]
+  connectedAccounts  ConnectedAccount[]
+  channels           Channel[]
+  mediaAssets        MediaAsset[]
+  analyses           Analysis[]
+  comparisons        Comparison[]
+  posts              Post[]
+  creditBalance      CreditBalance?
+  creditTransactions CreditTransaction[]
+  apiKeys            ApiKey[]
+  deletionRequests   DataDeletionRequest[]
+
+  @@map("workspaces")
+  @@schema("public")
+}
+
+model WorkspaceMember {
+  id          String        @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  workspaceId String        @map("workspace_id") @db.Uuid
+  profileId   String        @map("profile_id") @db.Uuid
+  role        WorkspaceRole @default(MEMBER)
+  invitedAt   DateTime?     @map("invited_at") @db.Timestamptz(6)
+  joinedAt    DateTime      @default(now()) @map("joined_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  profile   Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, profileId])
+  @@index([profileId])
+  @@map("workspace_members")
+  @@schema("public")
+}
+
+// ─── Social connections & backfill ───────────────────────────────────────────
+
+/// Platform OAuth credentials. `accessToken` / `refreshToken` hold app-encrypted
+/// ciphertext (AES-256-GCM, key from env) — never plaintext.
+model ConnectedAccount {
+  id                String           @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  workspaceId       String           @map("workspace_id") @db.Uuid
+  connectedById     String           @map("connected_by_id") @db.Uuid
+  platform          Platform
+  platformAccountId String           @map("platform_account_id")
+  handle            String?
+  scopes            String[]
+  accessToken       Bytes?           @map("access_token")
+  refreshToken      Bytes?           @map("refresh_token")
+  tokenExpiresAt    DateTime?        @map("token_expires_at") @db.Timestamptz(6)
+  status            ConnectionStatus @default(ACTIVE)
+  connectedAt       DateTime         @default(now()) @map("connected_at") @db.Timestamptz(6)
+  lastSyncedAt      DateTime?        @map("last_synced_at") @db.Timestamptz(6)
+  disconnectedAt    DateTime?        @map("disconnected_at") @db.Timestamptz(6)
+  /// Platform ToS deletion deadline once disconnected. Swept by the purge job.
+  purgeAfter        DateTime?        @map("purge_after") @db.Timestamptz(6)
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  connectedBy Profile   @relation(fields: [connectedById], references: [id], onDelete: Cascade)
+  channels    Channel[]
+
+  @@unique([workspaceId, platform, platformAccountId])
+  @@index([workspaceId])
+  @@index([connectedById])
+  @@index([purgeAfter])
+  @@map("connected_accounts")
+  @@schema("public")
+}
+
+/// A YouTube channel / Instagram professional account / TikTok account.
+/// Also the unit of within-creator normalization — labels are z-scored and
+/// ranked inside a channel, never across channels.
+model Channel {
+  id                 String    @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  workspaceId        String    @map("workspace_id") @db.Uuid
+  connectedAccountId String    @map("connected_account_id") @db.Uuid
+  platform           Platform
+  platformChannelId  String    @map("platform_channel_id")
+  title              String?
+  niche              String?
+  followerCount      Int?      @map("follower_count")
+  lastBackfilledAt   DateTime? @map("last_backfilled_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace        Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  connectedAccount ConnectedAccount @relation(fields: [connectedAccountId], references: [id], onDelete: Cascade)
+  posts            Post[]
+
+  @@unique([platform, platformChannelId])
+  @@index([workspaceId])
+  @@index([connectedAccountId])
+  @@map("channels")
+  @@schema("public")
+}
+
+// ─── Media & analysis (the pre-post product) ─────────────────────────────────
+
+model MediaAsset {
+  id            String      @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  workspaceId   String      @map("workspace_id") @db.Uuid
+  uploadedById  String?     @map("uploaded_by_id") @db.Uuid
+  kind          MediaKind
+  source        MediaSource @default(UPLOAD)
+  status        MediaStatus @default(PENDING)
+  storageBucket String      @default("media") @map("storage_bucket")
+  /// Namespaced `{workspace_id}/{media_asset_id}` — the Storage RLS policy
+  /// reads the first path segment.
+  storagePath   String      @map("storage_path")
+  mimeType      String?     @map("mime_type")
+  byteSize      BigInt?     @map("byte_size")
+  durationSec   Float?      @map("duration_sec")
+  width         Int?
+  height        Int?
+  /// sha256 — dedupes re-uploads and lets us reuse a cached analysis.
+  checksum      String?
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  purgeAfter    DateTime?   @map("purge_after") @db.Timestamptz(6)
+
+  workspace  Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  uploadedBy Profile?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  analyses   Analysis[]
+  posts      Post[]
+
+  @@unique([workspaceId, checksum])
+  @@index([workspaceId])
+  @@index([uploadedById])
+  @@map("media_assets")
+  @@schema("public")
+}
+
+/// One user-visible "run the model on this asset".
+model Analysis {
+  id             String         @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  workspaceId    String         @map("workspace_id") @db.Uuid
+  mediaAssetId   String         @map("media_asset_id") @db.Uuid
+  requestedById  String?        @map("requested_by_id") @db.Uuid
+  status         AnalysisStatus @default(QUEUED)
+  modelVersionId String?        @map("model_version_id") @db.Uuid
+  creditsCharged Int            @default(0) @map("credits_charged")
+  error          String?
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  startedAt      DateTime?      @map("started_at") @db.Timestamptz(6)
+  completedAt    DateTime?      @map("completed_at") @db.Timestamptz(6)
+
+  workspace         Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  mediaAsset        MediaAsset          @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  requestedBy       Profile?            @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+  modelVersion      ModelVersion?       @relation(fields: [modelVersionId], references: [id])
+  result            AnalysisResult?
+  inferenceRuns     InferenceRun[]
+  comparisonEntries ComparisonEntry[]
+  predictedPosts    Post[]
+  features          FeatureArtifact[]
+  transactions      CreditTransaction[]
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([mediaAssetId])
+  @@index([requestedById])
+  @@index([modelVersionId])
+  @@index([status])
+  @@map("analyses")
+  @@schema("public")
+}
+
+/// One attempt against apps/ml. Kept separate from Analysis so retries and the
+/// GPU-cost line item are both auditable.
+model InferenceRun {
+  id         BigInt    @id @default(autoincrement())
+  analysisId String    @map("analysis_id") @db.Uuid
+  attempt    Int       @default(1)
+  queueJobId String?   @map("queue_job_id")
+  mlEndpoint String?   @map("ml_endpoint")
+  device     String?
+  gpuSeconds Float?    @map("gpu_seconds")
+  durationMs Int?      @map("duration_ms")
+  error      String?
+  startedAt  DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+
+  analysis Analysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@unique([analysisId, attempt])
+  @@index([queueJobId])
+  @@map("inference_runs")
+  @@schema("public")
+}
+
+/// The result screen. `resonanceScore` is nullable on purpose: the absolute
+/// 0–100 only ships once calibration is validated. Relative framing
+/// (percentileInChannel) is what the MVP renders.
+model AnalysisResult {
+  analysisId          String   @id @map("analysis_id") @db.Uuid
+  resonanceScore      Int?     @map("resonance_score")
+  percentileInChannel Float?   @map("percentile_in_channel")
+  confidence          Float?
+  /// Region-weighted attention timeline — parallel arrays, one entry per TRIBE
+  /// segment, always read whole. Equal lengths enforced by
+  /// analysis_results_timeline_len_chk.
+  timelineStartSec    Float[]  @map("timeline_start_sec")
+  timelineAttention   Float[]  @map("timeline_attention")
+  timelineVisual      Float[]  @map("timeline_visual")
+  timelineAudio       Float[]  @map("timeline_audio")
+  timelineLanguage    Float[]  @map("timeline_language")
+  /// Dev telemetry (global_mean/std/min/max). Never rendered to a creator.
+  rawStats            Json?    @map("raw_stats")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  analysis        Analysis                 @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  axisScores      AnalysisAxisScore[]
+  recommendations AnalysisRecommendation[]
+
+  @@map("analysis_results")
+  @@schema("public")
+}
+
+/// The "WHY" rows. `confidence` carries the honesty gating: EMOTIONAL_PULL and
+/// MEMORABILITY are cortical proxies only and ship labelled BETA.
+model AnalysisAxisScore {
+  id         BigInt         @id @default(autoincrement())
+  analysisId String         @map("analysis_id") @db.Uuid
+  axis       ResonanceAxis
+  score      Float
+  confidence AxisConfidence @default(BETA)
+  position   Int            @default(0)
+
+  result AnalysisResult @relation(fields: [analysisId], references: [analysisId], onDelete: Cascade)
+
+  @@unique([analysisId, axis])
+  @@map("analysis_axis_scores")
+  @@schema("public")
+}
+
+/// The "DO THIS" bullets.
+model AnalysisRecommendation {
+  id             BigInt             @id @default(autoincrement())
+  analysisId     String             @map("analysis_id") @db.Uuid
+  kind           RecommendationKind
+  message        String
+  targetStartSec Float?             @map("target_start_sec")
+  targetStopSec  Float?             @map("target_stop_sec")
+  priority       Int                @default(0)
+
+  result AnalysisResult @relation(fields: [analysisId], references: [analysisId], onDelete: Cascade)
+
+  @@index([analysisId, priority])
+  @@map("analysis_recommendations")
+  @@schema("public")
+}
+
+/// A/B variant comparison — ranking is the most defensible use of a noisy model.
+model Comparison {
+  id          String   @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  name        String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  entries   ComparisonEntry[]
+
+  @@index([workspaceId])
+  @@map("comparisons")
+  @@schema("public")
+}
+
+model ComparisonEntry {
+  id            BigInt  @id @default(autoincrement())
+  comparisonId  String  @map("comparison_id") @db.Uuid
+  analysisId    String  @map("analysis_id") @db.Uuid
+  label         String?
+  predictedRank Int?    @map("predicted_rank")
+  isWinner      Boolean @default(false) @map("is_winner")
+
+  comparison Comparison @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
+  analysis   Analysis   @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@unique([comparisonId, analysisId])
+  @@index([analysisId])
+  @@map("comparison_entries")
+  @@schema("public")
+}
+
+// ─── Published posts & real outcomes (the label side) ────────────────────────
+
+model Post {
+  id                    String     @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  workspaceId           String     @map("workspace_id") @db.Uuid
+  channelId             String     @map("channel_id") @db.Uuid
+  platform              Platform
+  platformPostId        String     @map("platform_post_id")
+  /// Null when we never obtained the source file — platforms do not hand you
+  /// the MP4, so backfilled posts often have labels but no media.
+  mediaAssetId          String?    @map("media_asset_id") @db.Uuid
+  /// Closes the predicted-vs-actual loop: which analysis called this one?
+  predictedByAnalysisId String?    @map("predicted_by_analysis_id") @db.Uuid
+  format                PostFormat @default(SHORT_FORM)
+  title                 String?
+  caption               String?
+  permalink             String?
+  durationSec           Float?     @map("duration_sec")
+  publishedAt           DateTime?  @map("published_at") @db.Timestamptz(6)
+  createdAt             DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  purgeAfter            DateTime?  @map("purge_after") @db.Timestamptz(6)
+
+  workspace           Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel             Channel              @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  mediaAsset          MediaAsset?          @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+  predictedByAnalysis Analysis?            @relation(fields: [predictedByAnalysisId], references: [id], onDelete: SetNull)
+  metricSnapshots     PostMetricSnapshot[]
+  retentionCurves     PostRetentionCurve[]
+  labels              PostLabel[]
+  features            FeatureArtifact[]
+
+  @@unique([channelId, platformPostId])
+  @@index([workspaceId])
+  @@index([channelId, publishedAt(sort: Desc)])
+  @@index([mediaAssetId])
+  @@index([predictedByAnalysisId])
+  @@index([purgeAfter])
+  @@map("posts")
+  @@schema("public")
+}
+
+/// Derived metrics only — raw platform API payloads are never persisted.
+/// Wide nullability is deliberate: TikTok fills counts only, Instagram adds
+/// watch-time, YouTube fills everything.
+model PostMetricSnapshot {
+  id                      BigInt   @id @default(autoincrement())
+  postId                  String   @map("post_id") @db.Uuid
+  capturedAt              DateTime @map("captured_at") @db.Timestamptz(6)
+  views                   BigInt?
+  reach                   BigInt?
+  impressions             BigInt?
+  likes                   BigInt?
+  comments                BigInt?
+  shares                  BigInt?
+  saves                   BigInt?
+  subscribersGained       Int?     @map("subscribers_gained")
+  avgViewDurationSec      Float?   @map("avg_view_duration_sec")
+  avgViewPercentage       Float?   @map("avg_view_percentage")
+  estimatedMinutesWatched Float?   @map("estimated_minutes_watched")
+  engagementRate          Float?   @map("engagement_rate")
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, capturedAt])
+  @@index([postId, capturedAt(sort: Desc)])
+  @@map("post_metric_snapshots")
+  @@schema("public")
+}
+
+/// The golden temporal label — YouTube only. Parallel arrays, one entry per
+/// elapsedVideoTimeRatio bucket.
+model PostRetentionCurve {
+  id                           String    @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  postId                       String    @map("post_id") @db.Uuid
+  capturedAt                   DateTime  @map("captured_at") @db.Timestamptz(6)
+  elapsedRatio                 Float[]   @map("elapsed_ratio")
+  audienceWatchRatio           Float[]   @map("audience_watch_ratio")
+  relativeRetentionPerformance Float[]   @map("relative_retention_performance")
+  purgeAfter                   DateTime? @map("purge_after") @db.Timestamptz(6)
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, capturedAt])
+  @@index([postId])
+  @@map("post_retention_curves")
+  @@schema("public")
+}
+
+/// The training target. Normalization stats must be fit on TRAIN only, so the
+/// split tag lives with the label — making the leakage rule checkable in SQL
+/// instead of enforced by convention.
+model PostLabel {
+  id               BigInt    @id @default(autoincrement())
+  postId           String    @map("post_id") @db.Uuid
+  kind             LabelKind
+  rawValue         Float?    @map("raw_value")
+  withinChannelZ   Float?    @map("within_channel_z")
+  withinChannelPct Float?    @map("within_channel_pct")
+  splitTag         SplitTag? @map("split_tag")
+  computedAt       DateTime  @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, kind])
+  @@index([splitTag])
+  @@map("post_labels")
+  @@schema("public")
+}
+
+// ─── ML artifacts & model registry ───────────────────────────────────────────
+
+/// Pointer only — heavy tensors live in object storage, never in Postgres.
+model FeatureArtifact {
+  id             String      @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  analysisId     String?     @map("analysis_id") @db.Uuid
+  postId         String?     @map("post_id") @db.Uuid
+  modelVersionId String?     @map("model_version_id") @db.Uuid
+  kind           FeatureKind
+  storageBucket  String      @map("storage_bucket")
+  storagePath    String      @map("storage_path")
+  shape          Int[]
+  dtype          String?
+  sizeBytes      BigInt?     @map("size_bytes")
+  checksum       String?
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  analysis     Analysis?     @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  post         Post?         @relation(fields: [postId], references: [id], onDelete: Cascade)
+  modelVersion ModelVersion? @relation(fields: [modelVersionId], references: [id])
+
+  @@index([analysisId])
+  @@index([postId])
+  @@index([modelVersionId])
+  @@index([kind])
+  @@map("feature_artifacts")
+  @@schema("public")
+}
+
+/// Every result records which model produced it, so calibration drift is
+/// measurable rather than anecdotal.
+model ModelVersion {
+  id        String    @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  kind      ModelKind
+  name      String
+  version   String
+  gitSha    String?   @map("git_sha")
+  metrics   Json?
+  isActive  Boolean   @default(false) @map("is_active")
+  trainedAt DateTime? @map("trained_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  analyses Analysis[]
+  features FeatureArtifact[]
+
+  @@unique([kind, name, version])
+  @@map("model_versions")
+  @@schema("public")
+}
+
+// ─── Billing (usage-based credits) ───────────────────────────────────────────
+
+/// Cached balance. credit_transactions is the source of truth; both are written
+/// in the same transaction.
+model CreditBalance {
+  workspaceId String   @id @map("workspace_id") @db.Uuid
+  balance     Int      @default(0)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("credit_balances")
+  @@schema("public")
+}
+
+/// Append-only ledger.
+model CreditTransaction {
+  id          BigInt        @id @default(autoincrement())
+  workspaceId String        @map("workspace_id") @db.Uuid
+  kind        CreditTxnKind
+  delta       Int
+  analysisId  String?       @map("analysis_id") @db.Uuid
+  externalRef String?       @map("external_ref")
+  note        String?
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  analysis  Analysis? @relation(fields: [analysisId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([analysisId])
+  @@map("credit_transactions")
+  @@schema("public")
+}
+
+/// The brand / agency public API surface.
+model ApiKey {
+  id          String    @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  workspaceId String    @map("workspace_id") @db.Uuid
+  name        String
+  /// sha256 of the key. The plaintext is shown once and never stored.
+  hashedKey   String    @unique @map("hashed_key")
+  prefix      String
+  scopes      String[]
+  lastUsedAt  DateTime? @map("last_used_at") @db.Timestamptz(6)
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("api_keys")
+  @@schema("public")
+}
+
+// ─── Compliance ──────────────────────────────────────────────────────────────
+
+/// All three platforms require deletion when a user disconnects, plus retention
+/// windows on analytics data. This table is the audit trail for both.
+model DataDeletionRequest {
+  id          String         @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  workspaceId String?        @map("workspace_id") @db.Uuid
+  profileId   String?        @map("profile_id") @db.Uuid
+  reason      DeletionReason
+  status      DeletionStatus @default(PENDING)
+  scope       Json?
+  requestedAt DateTime       @default(now()) @map("requested_at") @db.Timestamptz(6)
+  completedAt DateTime?      @map("completed_at") @db.Timestamptz(6)
+  error       String?
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  profile   Profile?   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([status, requestedAt])
+  @@index([workspaceId])
+  @@index([profileId])
+  @@map("data_deletion_requests")
+  @@schema("public")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+// Postgres type names are snake_case, singular, `_enum`-suffixed — so a cast
+// like `::platform_enum` in hand-written SQL can never be confused with a table.
+
+enum WorkspaceKind {
+  PERSONAL
+  TEAM
+
+  @@map("workspace_kind_enum")
+  @@schema("public")
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+
+  @@map("workspace_role_enum")
+  @@schema("public")
+}
+
+enum Platform {
+  YOUTUBE
+  INSTAGRAM
+  TIKTOK
+
+  @@map("platform_enum")
+  @@schema("public")
+}
+
+enum ConnectionStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+  DISCONNECTED
+
+  @@map("connection_status_enum")
+  @@schema("public")
+}
+
+enum MediaKind {
+  VIDEO
+  AUDIO
+  IMAGE
+
+  @@map("media_kind_enum")
+  @@schema("public")
+}
+
+enum MediaSource {
+  UPLOAD
+  PLATFORM_BACKFILL
+  CAPTURE
+
+  @@map("media_source_enum")
+  @@schema("public")
+}
+
+enum MediaStatus {
+  PENDING
+  READY
+  FAILED
+  PURGED
+
+  @@map("media_status_enum")
+  @@schema("public")
+}
+
+enum AnalysisStatus {
+  QUEUED
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+
+  @@map("analysis_status_enum")
+  @@schema("public")
+}
+
+enum ResonanceAxis {
+  VISUAL_ATTENTION
+  AUDIO_ENGAGEMENT
+  CLARITY
+  EMOTIONAL_PULL
+  MEMORABILITY
+
+  @@map("resonance_axis_enum")
+  @@schema("public")
+}
+
+enum AxisConfidence {
+  STABLE
+  MEDIUM
+  BETA
+
+  @@map("axis_confidence_enum")
+  @@schema("public")
+}
+
+enum RecommendationKind {
+  HOOK
+  PACING
+  TRIM
+  AUDIO
+  CLARITY
+  LENGTH
+  CAPTION
+  POSTING_TIME
+
+  @@map("recommendation_kind_enum")
+  @@schema("public")
+}
+
+enum PostFormat {
+  SHORT_FORM
+  LONG_FORM
+  STORY
+  IMAGE
+
+  @@map("post_format_enum")
+  @@schema("public")
+}
+
+enum LabelKind {
+  COMPLETION_RATE
+  ENGAGEMENT_RATE
+  WATCH_TIME
+  RETENTION_CURVE
+
+  @@map("label_kind_enum")
+  @@schema("public")
+}
+
+enum SplitTag {
+  TRAIN
+  VAL
+  TEST
+  HOLDOUT
+
+  @@map("split_tag_enum")
+  @@schema("public")
+}
+
+enum FeatureKind {
+  FUSED_LATENT_POOLED
+  FUSED_LATENT_SEQUENCE
+  YEO7_TIMESERIES
+  BRAIN_TENSOR
+  CONTENT_METADATA
+  TEXT_EMBEDDING
+
+  @@map("feature_kind_enum")
+  @@schema("public")
+}
+
+enum ModelKind {
+  TRIBE_ENCODER
+  CALIBRATION_TIMELINE
+  CALIBRATION_RANKER
+  BASELINE
+
+  @@map("model_kind_enum")
+  @@schema("public")
+}
+
+enum CreditTxnKind {
+  TRIAL_GRANT
+  PURCHASE
+  ANALYSIS_CHARGE
+  REFUND
+  ADJUSTMENT
+  EXPIRY
+
+  @@map("credit_txn_kind_enum")
+  @@schema("public")
+}
+
+enum DeletionReason {
+  USER_DISCONNECT
+  ACCOUNT_DELETE
+  RETENTION_EXPIRY
+  PLATFORM_REQUEST
+
+  @@map("deletion_reason_enum")
+  @@schema("public")
+}
+
+enum DeletionStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+
+  @@map("deletion_status_enum")
+  @@schema("public")
+}

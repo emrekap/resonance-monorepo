@@ -1,0 +1,1 @@
+TLS is sslmode=no-verify. Supabase signs Postgres certs with its own CA, and the public download URLs 404 — the cert is only available from your dashboard (Project Settings → Database → SSL Configuration). Encrypted but not MITM-proof. Drop it into packages/db/certs/ and switch to verify-full before production.

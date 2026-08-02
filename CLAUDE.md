@@ -111,8 +111,10 @@ RN options win). All are type-check only (`noEmit`); the one exception is `apps/
 **Done:** root workspace (Bun + Turbo), `@repo/tsconfig`, `apps/api` (`/health`, `/analyze` with Zod
 
 - `AppType` d.ts), `packages/api-contract` (RPC client), `apps/ml` (Python service copied from
-  `../tribev2-api`).
-  **TODO:** Redis/BullMQ queue in api; refactor `apps/ml` to a queue worker; generate `@repo/ml-client`
+  `../tribev2-api`), `packages/db` (Prisma 7 schema + migrations on Supabase Postgres, 23 tables,
+  RLS enforced and verified — see [`packages/db/README.md`](packages/db/README.md)).
+  **TODO:** wire `apps/api` to `@repo/db` (replace the in-memory job `Map` in `routes/analyze.ts`,
+  add Supabase JWT middleware → `withUser`); Redis/BullMQ queue in api; refactor `apps/ml` to a queue worker; generate `@repo/ml-client`
   from the ml OpenAPI; `packages/db` (Prisma: users, connected accounts, posts, jobs, results);
   scaffold `apps/mobile` + `apps/web`.
 
@@ -122,5 +124,8 @@ RN options win). All are type-check only (`noEmit`); the one exception is `apps/
 - **Looking for code?** Query the codebase index first (see _Code discovery_ above) — then `Read`.
 - **Adding/editing an API route?** Use the `add-api-route` skill (`.claude/skills/`).
 - **Adding a package or app?** Use the `add-package` skill (`.claude/skills/`).
+- **Adding/changing a DB model?** Use the `add-db-model` skill (`.claude/skills/`) — snake_case
+  `@@map`/`@map`, `<name>_enum` for enum types, and every new table needs RLS enabled + forced with
+  a policy rooted at `workspace_id` or `profile_id`.
 - After structural changes, **re-index** so the graph doesn't go stale.
 - Commit / push only when asked.
