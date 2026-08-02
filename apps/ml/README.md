@@ -20,14 +20,14 @@ A lightweight **FastAPI** service that wraps Meta's [TRIBE v2](https://huggingfa
 
 ## Requirements
 
-| Requirement           | Notes                                                                          |
-| --------------------- | ------------------------------------------------------------------------------ |
-| **Python**            | 3.11 (tested on 3.11.15; `exca` requires ≥ 3.11)                               |
-| **pip**               | 23+                                                                            |
-| **RAM**               | ≥ 8 GB (TRIBE v2 weights ~3.5 GB + Llama-3.2-3B ~6 GB)                         |
-| **GPU**               | Optional but strongly recommended (CPU inference is slow)                      |
-| **`uv` + `ffmpeg`**   | Required for transcription: tribev2 runs `uvx whisperx`, which needs `ffmpeg`  |
-| **HuggingFace token** | **Required for all inference** — gated [LLaMA 3.2-3B] text encoder.            |
+| Requirement           | Notes                                                                         |
+| --------------------- | ----------------------------------------------------------------------------- |
+| **Python**            | 3.11 (tested on 3.11.15; `exca` requires ≥ 3.11)                              |
+| **pip**               | 23+                                                                           |
+| **RAM**               | ≥ 8 GB (TRIBE v2 weights ~3.5 GB + Llama-3.2-3B ~6 GB)                        |
+| **GPU**               | Optional but strongly recommended (CPU inference is slow)                     |
+| **`uv` + `ffmpeg`**   | Required for transcription: tribev2 runs `uvx whisperx`, which needs `ffmpeg` |
+| **HuggingFace token** | **Required for all inference** — gated [LLaMA 3.2-3B] text encoder.           |
 
 [LLaMA 3.2-3B]: https://huggingface.co/meta-llama/Llama-3.2-3B
 

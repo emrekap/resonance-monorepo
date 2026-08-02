@@ -5,7 +5,7 @@
 > calibration model can pull from each platform, which become the **label** vs. the **fallback**,
 > and the ToS/access constraints that shape how we build the training corpus.
 
-**The headline asymmetry:** the golden *temporal* label (a per-second retention curve) only really
+**The headline asymmetry:** the golden _temporal_ label (a per-second retention curve) only really
 exists on **YouTube**. Instagram gives scalar watch-time; TikTok gives engagement counts only. This
 should drive platform strategy — YouTube-led for validation, IG for scale, TikTok as fallback.
 
@@ -25,7 +25,7 @@ should drive platform strategy — YouTube-led for validation, IG for scale, Tik
 curve across the video:
 
 - `audienceWatchRatio` — absolute: how many times each portion was watched vs. total views.
-- `relativeRetentionPerformance` — 0–1, retention *vs. other YouTube videos of similar length*
+- `relativeRetentionPerformance` — 0–1, retention _vs. other YouTube videos of similar length_
   (0.5 = median). **Already length-normalized** — partly solves the confounder problem out of the box.
 
 **Scalar labels + confounder controls (per-video, per-day):** `views`, `estimatedMinutesWatched`,
@@ -34,7 +34,7 @@ plus traffic sources and demographics. `averageViewPercentage` is a clean scalar
 `views`/impressions give the denominator for engagement-rate normalization.
 
 **Verdict:** YouTube alone supports the **timeline head** (`retention(t) = f(features(t))`,
-row-for-row) *and* the scalar/ranking head. **Run the validation cohort on YouTube first.**
+row-for-row) _and_ the scalar/ranking head. **Run the validation cohort on YouTube first.**
 
 ---
 
@@ -82,11 +82,11 @@ sometimes `collect_count` (saves). **No watch-time, no retention, no reach.**
 
 ## Summary — map to the model heads
 
-| | Retention curve (timeline head) | Watch-time scalar | Engagement counts | Normalizer |
-|---|---|---|---|---|
-| **YouTube** | ✅ `audienceWatchRatio` + `relativeRetentionPerformance` × `elapsedVideoTimeRatio` | ✅ `averageViewDuration`, `averageViewPercentage` | ✅ likes/comments/shares | ✅ views, impressions |
-| **Instagram** | ❌ (average only) | ✅ `ig_reels_avg_watch_time`, `ig_reels_video_view_total_time` | ✅ likes/comments/shares/saves | ✅ reach, views |
-| **TikTok** | ❌ | ⚠️ Business API only | ✅ view/like/comment/share/collect | ⚠️ view_count only |
+|               | Retention curve (timeline head)                                                    | Watch-time scalar                                              | Engagement counts                  | Normalizer            |
+| ------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------- | ---------------------------------- | --------------------- |
+| **YouTube**   | ✅ `audienceWatchRatio` + `relativeRetentionPerformance` × `elapsedVideoTimeRatio` | ✅ `averageViewDuration`, `averageViewPercentage`              | ✅ likes/comments/shares           | ✅ views, impressions |
+| **Instagram** | ❌ (average only)                                                                  | ✅ `ig_reels_avg_watch_time`, `ig_reels_video_view_total_time` | ✅ likes/comments/shares/saves     | ✅ reach, views       |
+| **TikTok**    | ❌                                                                                 | ⚠️ Business API only                                           | ✅ view/like/comment/share/collect | ⚠️ view_count only    |
 
 **Label strategy that falls out of this:** golden temporal label = **YouTube**; scalar watch-time
 label = **YouTube + Instagram**; universal fallback = **engagement-rate ranking on all three**. The
@@ -97,10 +97,10 @@ head (also the most defensible per the model design).
 
 ## Two cross-cutting gotchas people forget
 
-1. **The label is only half of backfill — you also need the *video file* to extract TRIBE features,
+1. **The label is only half of backfill — you also need the _video file_ to extract TRIBE features,
    and platforms don't hand you the source MP4.** IG's `media_url` gives a (temporary, expiring)
    video URL; YouTube and TikTok offer **no official source download**, and scraping the stream is a
-   ToS minefield. Practical answer: for a creator's *own* content, have them authorize/upload, or
+   ToS minefield. Practical answer: for a creator's _own_ content, have them authorize/upload, or
    capture the media at post time going forward. This is a separate acquisition problem from analytics.
 2. **Storage/ToS limits on what you can persist.** All three restrict retention of API data and
    require **deletion when a user disconnects** (Meta data-use policy; TikTok deletion windows;

@@ -6,12 +6,12 @@ Bun, Next (SWC), and Expo (Metro) each do their own transpiling; `tsc` is used p
 
 ## Files
 
-| Config | Extend it from | For |
-| --- | --- | --- |
-| `base.json` | shared libs/packages (e.g. `@repo/db`, `@repo/api-contract`) | strict defaults, bundler resolution |
-| `bun.json` | `apps/api` (Hono on Bun) | `types: ["bun"]`, `.ts` imports |
-| `nextjs.json` | `apps/web` | DOM libs, `jsx: preserve`, the `next` plugin |
-| `react-native.json` | `apps/mobile` (Expo) | `jsx: react-jsx`, RN libs |
+| Config              | Extend it from                                               | For                                          |
+| ------------------- | ------------------------------------------------------------ | -------------------------------------------- |
+| `base.json`         | shared libs/packages (e.g. `@repo/db`, `@repo/api-contract`) | strict defaults, bundler resolution          |
+| `bun.json`          | `apps/api` (Hono on Bun)                                     | `types: ["bun"]`, `.ts` imports              |
+| `nextjs.json`       | `apps/web`                                                   | DOM libs, `jsx: preserve`, the `next` plugin |
+| `react-native.json` | `apps/mobile` (Expo)                                         | `jsx: react-jsx`, RN libs                    |
 
 ## Usage
 

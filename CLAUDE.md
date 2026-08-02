@@ -26,6 +26,42 @@ packages/ db (Prisma) · api-contract (Hono RPC client) · tsconfig (@repo/tscon
 infra/   docker · queue · deploy
 ```
 
+## Code discovery — query the index FIRST
+
+This repo is indexed in **codebase-memory-mcp** as project
+**`Users-emre-Desktop-files-resonance-monorepo`** — pass that as `project` on every call. The graph
+spans **both halves of the polyglot split** (TS in `apps/api` + `packages/*`, Python in `apps/ml`),
+so it answers cross-language questions grep structurally cannot.
+
+**Before** reaching for Grep/Glob to find code, use:
+
+| Need                                               | Tool                                                                                                    |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Find a function / class / route                    | `search_graph` — `query` for natural language, `name_pattern` for regex, `label: "Route"` for endpoints |
+| Read a symbol's source                             | `get_code_snippet` with the `qualified_name` returned by `search_graph`                                 |
+| Callers, callees, impact, data flow                | `trace_path` — `mode: calls` / `data_flow`                                                              |
+| An `api` → `ml` hop across the HTTP/queue boundary | `trace_path` with `mode: "cross_service"`                                                               |
+| Packages, routes, entry points, layout             | `get_architecture`                                                                                      |
+| Text search, deduped into containing functions     | `search_code` (graph-augmented grep)                                                                    |
+| Multi-hop / aggregate questions                    | `query_graph` (Cypher)                                                                                  |
+
+Qualified names are project-prefixed, e.g.
+`Users-emre-Desktop-files-resonance-monorepo.apps.ml.manage_space.main`.
+
+Keep using Grep/Glob/Read directly for **non-code** files (Markdown, JSON, configs, `.env.example`,
+lockfiles) — those aren't graph nodes. And **always `Read` a file before editing it**: the index
+finds code, it does not replace seeing the current bytes.
+
+**Keep it fresh.** The graph is a snapshot, not a live view — it can lag the working tree. After
+adding, renaming, or moving code (new route, new package, refactor), re-index:
+
+```
+index_repository(repo_path: "/Users/emre/Desktop/files/resonance-monorepo")
+```
+
+`index_status` reports readiness and the indexed commit; `detect_changes` shows what moved since a
+ref. If the graph and a `Read` ever disagree, the file wins.
+
 ## Stack decisions (and the WHY)
 
 - **Bun + Hono**, typesafety via **Hono RPC** (`hc<AppType>`). **NO tRPC** — Hono RPC covers the
@@ -83,5 +119,8 @@ RN options win). All are type-check only (`noEmit`); the one exception is `apps/
 ## Conventions
 
 - Package scope `@repo/*`, `private`, `type: module`.
+- **Looking for code?** Query the codebase index first (see _Code discovery_ above) — then `Read`.
 - **Adding/editing an API route?** Use the `add-api-route` skill (`.claude/skills/`).
+- **Adding a package or app?** Use the `add-package` skill (`.claude/skills/`).
+- After structural changes, **re-index** so the graph doesn't go stale.
 - Commit / push only when asked.

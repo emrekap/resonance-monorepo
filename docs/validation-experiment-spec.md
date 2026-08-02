@@ -6,9 +6,9 @@
 > pre-registered accuracy number** proving (or refuting) that TRIBE-derived neuro-features predict
 > engagement better than cheap baselines — the core technical de-risking for the raise.
 
-**The one-liner we want to be able to say:** *"On a held-out cohort, TRIBE features rank a creator's
+**The one-liner we want to be able to say:** _"On a held-out cohort, TRIBE features rank a creator's
 next posts by retention at Spearman ρ = Y, beating a metadata+text baseline (ρ = X) by Δ, 95% CI
-[...], p < 0.01 — and pick the better of two posts N% of the time."*
+[...], p < 0.01 — and pick the better of two posts N% of the time."_
 
 If we can't beat metadata+text, the neuroscience isn't earning its GPU cost, and we want to know that
 in **week 3, not month 9.**
@@ -17,7 +17,7 @@ in **week 3, not month 9.**
 
 ## 1. Falsifiable hypothesis
 
-**H1 (primary):** neuro-features from TRIBE improve *within-creator* prediction of engagement/
+**H1 (primary):** neuro-features from TRIBE improve _within-creator_ prediction of engagement/
 retention over the best simple baseline (metadata + caption text), by a pre-registered margin, with
 significance clustered at the creator level.
 
@@ -77,18 +77,18 @@ temporally too" proof.
 
 Each rung adds information; the treatment must beat the cheap rungs.
 
-| ID | Model | Purpose |
-|---|---|---|
-| **B0** | Creator historical mean (predict every post = their average) | Null floor |
-| **B1** | Metadata only (length, hashtags, post time, follower count, day-of-week) | Cheap confounders |
-| **B2** | Caption/title text embedding | Language-only baseline |
-| **B3** | **TRIBE neuro-features (treatment)** | The hypothesis |
-| **B4** | TRIBE + metadata + text (full model) | Ceiling / does neuro add on top? |
+| ID     | Model                                                                    | Purpose                          |
+| ------ | ------------------------------------------------------------------------ | -------------------------------- |
+| **B0** | Creator historical mean (predict every post = their average)             | Null floor                       |
+| **B1** | Metadata only (length, hashtags, post time, follower count, day-of-week) | Cheap confounders                |
+| **B2** | Caption/title text embedding                                             | Language-only baseline           |
+| **B3** | **TRIBE neuro-features (treatment)**                                     | The hypothesis                   |
+| **B4** | TRIBE + metadata + text (full model)                                     | Ceiling / does neuro add on top? |
 
-**Ablations within B3** (to find *what* carries signal): fused latent vs. network-aggregated (Yeo-7)
+**Ablations within B3** (to find _what_ carries signal): fused latent vs. network-aggregated (Yeo-7)
 vs. raw brain tensor; and per-modality (video-only / audio-only / text-only encoders). The key
 scientific result is **B3 > B1, B2** and **B4 > B1+B2 combined** — i.e. neuro-features add
-*orthogonal* signal, not a restatement of metadata.
+_orthogonal_ signal, not a restatement of metadata.
 
 ---
 
@@ -148,11 +148,11 @@ is the story, not the absolute number.
 
 ## 9. Go / no-go (pre-registered thresholds)
 
-| Outcome | Criterion | Action |
-|---|---|---|
-| **Green** | B3 beats the best of {B1,B2} by **Δρ ≥ 0.10** *or* pairwise accuracy **≥ 65%**, significant across creators (p < 0.05) | Thesis validated — build; use the number for the raise |
-| **Yellow** | Positive but sub-threshold / not significant | Iterate features (latent vs. network), labels (retention vs. engagement), or cohort; re-run |
-| **Red** | No lift over metadata+text (CI includes 0) | Neuro-features aren't earning their cost — pivot the technical story before scaling spend |
+| Outcome    | Criterion                                                                                                              | Action                                                                                      |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **Green**  | B3 beats the best of {B1,B2} by **Δρ ≥ 0.10** _or_ pairwise accuracy **≥ 65%**, significant across creators (p < 0.05) | Thesis validated — build; use the number for the raise                                      |
+| **Yellow** | Positive but sub-threshold / not significant                                                                           | Iterate features (latent vs. network), labels (retention vs. engagement), or cohort; re-run |
+| **Red**    | No lift over metadata+text (CI includes 0)                                                                             | Neuro-features aren't earning their cost — pivot the technical story before scaling spend   |
 
 Committing to the **Red** action in advance is what makes this honest rather than theater.
 
@@ -161,7 +161,7 @@ Committing to the **Red** action in advance is what makes this honest rather tha
 ## 10. Validity & negative controls
 
 - **Confounder isolation:** because length/time/followers live in B1, any B3 > B1 win is signal
-  *beyond* those confounders. Additionally regress them out and confirm the win survives.
+  _beyond_ those confounders. Additionally regress them out and confirm the win survives.
 - **Label-shuffle negative control:** permute outcomes within creator → all models should collapse to
   chance. If B3 still "predicts," there's leakage — stop and fix.
 - **Replicate the known negative result:** confirm the **naive global brain-drive** baseline fails
@@ -174,8 +174,8 @@ Committing to the **Red** action in advance is what makes this honest rather tha
 
 ## 11. Cost & timeline (rough)
 
-1. Recruit + OAuth ~50 YouTube creators; backfill posts + analytics. *(Depends on API access — the
-   main external dependency.)*
+1. Recruit + OAuth ~50 YouTube creators; backfill posts + analytics. _(Depends on API access — the
+   main external dependency.)_
 2. Acquire video files (see data-contract caveat) + run TRIBE feature extraction. **GPU line item:**
    ~2,000 posts × inference seconds — batch on the L4/A10G stack; this is the dominant compute cost.
 3. Train the ladder, run both regimes, bootstrap, write up.
@@ -196,10 +196,10 @@ modeling.
 
 ## 13. Threats to validity (state them, don't hide them)
 
-- **Selection bias:** only *published* posts are observed; killed drafts are invisible → truncated
+- **Selection bias:** only _published_ posts are observed; killed drafts are invisible → truncated
   label range. Within-published ranking mitigates, doesn't remove.
 - **Algorithmic luck:** distribution/timing confounds "content quality"; the target is partly
-  exogenous → we validate a *propensity*, not a guarantee (why ranking > point estimates).
+  exogenous → we validate a _propensity_, not a guarantee (why ranking > point estimates).
 - **Small-n creators:** thin-history creators weaken within-creator stats; report metrics vs.
   posts-per-creator.
 - **YouTube-only golden label:** Task B generalization to IG/TikTok is unproven until those platforms'

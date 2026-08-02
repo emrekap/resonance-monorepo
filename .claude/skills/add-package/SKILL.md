@@ -5,6 +5,19 @@ description: Scaffold a new workspace package or app in the Resonance monorepo (
 
 # Add a workspace package or app
 
+## 0. Check what already exists (codebase index)
+
+The repo is indexed in **codebase-memory-mcp** as project
+`Users-emre-Desktop-files-resonance-monorepo`. Survey the workspace graph before adding to it:
+
+```
+get_architecture(project, aspects: ["packages", "dependencies", "entry_points"])
+search_graph(project, query: "<the thing you're about to build>")
+```
+
+This catches the two common mistakes early: scaffolding a package whose job an existing `@repo/*`
+already does, and adding a dependency edge that points the wrong way across the api/ml boundary.
+
 ## Where it goes
 
 - Shared library / contract → `packages/<name>/`
@@ -50,6 +63,14 @@ bun install   # from repo root — symlinks @repo/<name> and links it into depen
 ```bash
 bunx turbo run typecheck   # confirms the package joins the graph cleanly
 ```
+
+Re-index so the new package shows up in the code graph:
+
+```
+index_repository(repo_path: "/Users/emre/Desktop/files/resonance-monorepo")
+```
+
+A Python app is indexed too — the graph spans both runtimes even though Bun/Turbo ignore `apps/ml`.
 
 ## Rules / conventions
 

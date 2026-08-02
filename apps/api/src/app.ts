@@ -10,10 +10,7 @@ import { analyze } from './routes/analyze';
  * into `AppType` — that is what makes the Hono RPC client (`hc<AppType>`) fully
  * typed on the Expo and Next clients, with no codegen. Keep routes chained.
  */
-const app = new Hono()
-  .use('*', logger())
-  .route('/health', health)
-  .route('/analyze', analyze);
+const app = new Hono().use('*', logger()).route('/health', health).route('/analyze', analyze);
 
 export type AppType = typeof app;
 export default app;

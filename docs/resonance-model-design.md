@@ -19,7 +19,7 @@ cortical location predicted to activate above average at that moment; negative =
 
 The scalar summaries we currently print are crude reductions of that tensor:
 
-- **`global_mean`** — average over all vertices and time; near zero *by construction*. Tells users
+- **`global_mean`** — average over all vertices and time; near zero _by construction_. Tells users
   essentially nothing. Internal sanity check only.
 - **`global_std`** — spread of responses; higher ≈ more differentiated brain activity (a weak
   "dynamism" proxy).
@@ -31,9 +31,10 @@ The scalar summaries we currently print are crude reductions of that tensor:
   timeline**. Closest thing to a usable signal — but see the caveat below.
 
 **Two traps before any UI design:**
+
 1. **Never show a creator a z-score.** These are dev telemetry.
-2. **The *global* signal is the weakest one.** Independent research (arXiv 2607.01400) shows a
-   naive brain-wide average does **not** predict engagement; the signal lives in *specific*
+2. **The _global_ signal is the weakest one.** Independent research (arXiv 2607.01400) shows a
+   naive brain-wide average does **not** predict engagement; the signal lives in _specific_
    regions and only becomes "engagement" after calibration on real behavioral data.
 
 ---
@@ -42,26 +43,26 @@ The scalar summaries we currently print are crude reductions of that tensor:
 
 ### 1a. Axis → brain-network mapping (and how defensible each is)
 
-Load-bearing caveat: **fsaverage5 is a cortical *surface* — no subcortical structures.** The
+Load-bearing caveat: **fsaverage5 is a cortical _surface_ — no subcortical structures.** The
 actual emotion/reward/memory centers (amygdala, ventral striatum/nucleus accumbens, hippocampus)
-are **not in this output at all.** So any "emotion" or "memorability" axis is built from *cortical
-proxies*, not the real circuitry. That fact sets the defensibility tiers.
+are **not in this output at all.** So any "emotion" or "memorability" axis is built from _cortical
+proxies_, not the real circuitry. That fact sets the defensibility tiers.
 
 Parcellate vertices with a standard atlas (**Yeo-7/17 networks** is the clean, well-cited choice;
 Glasser for finer auditory/language parcels), then roll parcels up into product axes:
 
-| Product axis (user sees) | Cortical networks / regions | Driven by | Defensibility |
-|---|---|---|---|
-| **Visual attention** | Visual net (V1–V4, occipital) + Dorsal Attention (IPS, FEF) | V-JEPA 2 (video) | **High** — best-predicted region in brain encoding; 1:1 with video input |
-| **Audio engagement** | Auditory cortex (Heschl's, STG) | Wav2Vec-BERT (audio) | **High** — auditory predicts well; direct modality match |
-| **Clarity / comprehension** | Language net (L-STG/STS, Broca/IFG, angular gyrus) | Llama (transcript) | **Medium** — solid for speech-heavy, weak for non-verbal/music |
-| **Emotional pull** | Limbic (OFC, temporal pole), vmPFC | all three, weakly | **Low** — real reward centers are subcortical and *absent*; cortical shadow only |
-| **Memorability / narrative** | Default Mode Net (mPFC, PCC/precuneus, angular) | text + video | **Low/aspirational** — memory encoding needs hippocampus, not on the surface |
+| Product axis (user sees)     | Cortical networks / regions                                 | Driven by            | Defensibility                                                                    |
+| ---------------------------- | ----------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------- |
+| **Visual attention**         | Visual net (V1–V4, occipital) + Dorsal Attention (IPS, FEF) | V-JEPA 2 (video)     | **High** — best-predicted region in brain encoding; 1:1 with video input         |
+| **Audio engagement**         | Auditory cortex (Heschl's, STG)                             | Wav2Vec-BERT (audio) | **High** — auditory predicts well; direct modality match                         |
+| **Clarity / comprehension**  | Language net (L-STG/STS, Broca/IFG, angular gyrus)          | Llama (transcript)   | **Medium** — solid for speech-heavy, weak for non-verbal/music                   |
+| **Emotional pull**           | Limbic (OFC, temporal pole), vmPFC                          | all three, weakly    | **Low** — real reward centers are subcortical and _absent_; cortical shadow only |
+| **Memorability / narrative** | Default Mode Net (mPFC, PCC/precuneus, angular)             | text + video         | **Low/aspirational** — memory encoding needs hippocampus, not on the surface     |
 
 Honest read: **ship the top two as real, the third as "good enough," gate the bottom two behind a
 "beta" label** until validated against actual engagement. Even for strong axes, trust comes from
 the calibration head showing the feature correlates with an outcome — the brain-region story is the
-*explanation*, the data is the *proof*.
+_explanation_, the data is the _proof_.
 
 ### 1b. Result-screen hierarchy (mobile)
 
@@ -107,11 +108,11 @@ is visible** (the `beta` tag keeps trust when an axis is wrong); (3) the timelin
 
 ### 2a. Features (X) — use the representation, not the brain tensor
 
-Don't feed the `[T × 20,484]` predicted-fMRI tensor into the head; that's the model's *output* and
+Don't feed the `[T × 20,484]` predicted-fMRI tensor into the head; that's the model's _output_ and
 the object shown not to predict engagement in aggregate. Use a **feature hierarchy**:
 
 1. **Fused latent (best).** TRIBE fuses V-JEPA2 + Wav2Vec-BERT + Llama through a transformer
-   *before* projecting to brain space. The per-timestep fused hidden states carry more than what
+   _before_ projecting to brain space. The per-timestep fused hidden states carry more than what
    survives projection to 20k vertices. Pool (mean/max/attention) for clip-level; keep per-timestep
    for the timeline.
 2. **Network-aggregated brain predictions (interpretable).** Roll 20k vertices into Yeo-7 →
@@ -125,15 +126,15 @@ clip-level (pooled) for scalar outcomes, per-timestep for the retention curve (t
 ### 2b. Labels (Y) — where it's won or lost
 
 Raw counts are **dominated by confounders**: a 2M-follower creator gets 50k likes on garbage. Train
-on raw likes → you learn *follower count*, not *content quality*. Three commitments:
+on raw likes → you learn _follower count_, not _content quality_. Three commitments:
 
 - **(a) Always relative, never absolute.** Model engagement relative to the creator's own baseline:
   engagement-rate = interactions / impressions, or within-creator z-score. Formally, treat the
-  creator as a **random effect** (hierarchical model) so the head learns the *residual* content
-  explains after who/when/reach. This is also *why* the product framing is percentile/relative —
+  creator as a **random effect** (hierarchical model) so the head learns the _residual_ content
+  explains after who/when/reach. This is also _why_ the product framing is percentile/relative —
   it falls out of the correct statistics, it's not a UX whim.
 - **(b) Retention > likes.** Likes are late, sparse, algorithm-mediated. **Watch-time / completion /
-  retention** is content-intrinsic (did it *hold attention*?) and aligns with what TRIBE measures.
+  retention** is content-intrinsic (did it _hold attention_?) and aligns with what TRIBE measures.
   Make retention/completion the **primary** label; likes/saves secondary.
 - **(c) The golden label is the temporal retention curve.** YouTube's audience-retention graph (and
   replay heatmaps — the arXiv paper's target) is per-second, aligning **row-for-row** with
@@ -144,6 +145,7 @@ on raw likes → you learn *follower count*, not *content quality*. Three commit
 ### 2c. Training architecture — two heads, ranking over regression
 
 **Two heads on a shared trunk:**
+
 - **Timeline head:** `features(t) → retention(t)`. Small temporal model (temporal-conv / tiny
   transformer / per-segment MLP with context). Loss = correlation + MSE vs. the real curve. The hero
   feature and the defensible one.
@@ -157,7 +159,7 @@ Learning-to-rank is the single highest-leverage modeling decision.
 
 **Personalization = hierarchical.** Global shared trunk + creator-specific adaptation (random effect
 or lightweight adapter once a creator has enough posts). **Cold-start:** few-post creators fall back
-to global + an *audience-similarity* cohort (follower profile → nearest creators). Graceful
+to global + an _audience-similarity_ cohort (follower profile → nearest creators). Graceful
 degradation: global → cohort → personalized as data accrues.
 
 **Multi-task it.** Jointly predict retention, likes-rate, save-rate off the shared trunk — better
@@ -168,14 +170,14 @@ memorable").
 
 When a user connects IG/TikTok/YouTube:
 
-1. **Backfill is the goldmine.** Pull their last N posts *and* each post's analytics. 200 posts =
+1. **Backfill is the goldmine.** Pull their last N posts _and_ each post's analytics. 200 posts =
    **200 labeled examples the instant they connect**, before they ever use the predictor. Breaks the
    chicken-and-egg (predictor needs data; data needs users); no waiting for new posts.
 2. **Feature extraction:** run each historical post through TRIBE → features. (Real cost: GPU
    inference per post; batch it. A line item: creators × posts × GPU seconds.)
 3. **Train/adapt:** update global trunk + fit creator adapter.
 4. **Continuous loop:** every new post + realized performance = a fresh (features, label) pair →
-   online learning, *and* a measured predicted-vs-actual accuracy number (model monitoring +
+   online learning, _and_ a measured predicted-vs-actual accuracy number (model monitoring +
    marketing/fundraising proof in one).
 
 The compounding asset (the moat, stated precisely): a growing corpus of **(neuro-feature,
@@ -190,12 +192,12 @@ creators can assemble.
   rate-limited, and ToS-restricted** on analytics. A genuine dependency risk — golden-label quality
   depends on API access you don't fully control. De-risk early; fallback = completion rate +
   engagement counts.
-- **Distribution shift.** TRIBE was trained on adults watching *movies in a scanner*. Short-form
+- **Distribution shift.** TRIBE was trained on adults watching _movies in a scanner_. Short-form
   vertical UGC (fast cuts, faces, captions, trending audio) is a different distribution. Encoders may
   transfer; brain-calibration may not. Validate on-domain.
-- **Selection bias.** You only see *published* posts, never the ones creators killed. Label
+- **Selection bias.** You only see _published_ posts, never the ones creators killed. Label
   distribution is truncated. Within-published ranking mitigates but doesn't erase it.
-- **Causality vs. luck.** The algorithm decides *who sees* a post; identical posts vary 10× on
+- **Causality vs. luck.** The algorithm decides _who sees_ a post; identical posts vary 10× on
   timing/luck. You predict a partly-exogenous, noisy target → predict a **propensity/distribution,
   not a guarantee.** Reinforces ranking + percentile over point estimates.
 - **Goodhart/feedback.** Once creators optimize to the score, the score↔reality link drifts. Monitor
@@ -222,26 +224,29 @@ within-creator" — beats any deck slide.
 Prioritized by (a) neuro-predictability, (b) label availability, (c) tolerance to model noise.
 
 **Ship in MVP (high confidence):**
+
 - **Attention timeline** — the hero (Visual+Audio+Language), validated against retention. Robust
   even when the absolute score is shaky; "where does attention drop" is defensible + actionable.
-- **Variant A/B ranking** — *the tip of the spear.* Ranking is the most defensible use of a noisy
+- **Variant A/B ranking** — _the tip of the spear._ Ranking is the most defensible use of a noisy
   model and sidesteps absolute calibration entirely.
 - **Visual attention** + **Audio engagement** axes — best-predicted regions, direct modality match.
 - **Relative Resonance Score** (percentile vs. the creator's backfilled history) — relative, never
   absolute.
 
 **Fast-follow (medium):**
+
 - **Clarity/comprehension** axis — ship for speech-heavy content, suppress for music/non-verbal.
 - **Absolute 0–100 score** — only after calibration shows decent cross-cohort within-creator
   correlation.
 
 **Coming-soon / beta (low, honesty-gated):**
+
 - **Emotional pull** — cortical proxy only; reframe as "emotional tone," label beta, validate hard.
 - **Memorability** — needs rewatch/replay longitudinal data + hippocampal proxies you don't have on
   the surface. Park it.
 
-**Sequencing logic:** the MVP leans on the axes the literature predicts *best* (visual/audio) and
-the product uses that tolerate model noise *best* (ranking, relative, timeline). It defers the
+**Sequencing logic:** the MVP leans on the axes the literature predicts _best_ (visual/audio) and
+the product uses that tolerate model noise _best_ (ranking, relative, timeline). It defers the
 neuroscientifically weakest axes (emotion/memory) and the least-defensible framing (absolute scores),
 and it's designed to be **useful at low data** — timeline and A/B ranking work off a global/cohort
 model before per-creator personalization kicks in — then sharpens as the flywheel spins.
