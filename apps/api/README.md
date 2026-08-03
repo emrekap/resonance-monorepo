@@ -25,6 +25,7 @@ src/
   lib/                # small shared helpers, no layer
     queue.ts          # the `analysis` producer (BullMQ)
     media.ts  workspace.ts
+    storage.ts        # `media` bucket constant + signed URLs via the caller's JWT
     oauth.ts          # connect-state HMAC + AES-256-GCM token sealing
     platforms.ts      # PlatformProvider registry (YouTube live, IG/TikTok stubs)
   routes/
@@ -39,6 +40,9 @@ src/
       start.ts        # POST   /connected-accounts/:platform/start
       callback.ts     # GET    /connected-accounts/callback  (browser redirect)
       disconnect.ts   # DELETE /connected-accounts/:id
+    media/
+      index.ts        # composes + requireAuth
+      create.ts       # POST /media — register an upload, hand back its Storage path
 ```
 
 Each route file exports its own method-chained `Hono`, and the domain's `index.ts` composes them
@@ -145,6 +149,27 @@ unverifiable state answers JSON 400, because redirecting on a forged state is an
 Disconnect keeps the row (channels and old analyses stay anchored), drops the tokens immediately,
 and sets `purgeAfter` for the platform-ToS deletion sweep.
 
+## Media uploads — the bytes never come through here
+
+`POST /media` is a handshake, not an upload endpoint. It writes the `media_assets` row (status
+`PENDING`, bucket `media`, path `{workspace_id}/{media_asset_id}`) and answers with that location;
+the client then streams the file **straight to Supabase Storage with its own JWT**. The bucket's
+RLS policies (see the `security_rls` migration, §7 Storage) allow exactly the paths whose first
+segment is a workspace the caller belongs to — so Storage authorizes the write, not this process,
+and a multi-hundred-MB creator video never transits the API.
+
+`POST /analyze { mediaAssetId }` closes the loop: for a `media`-bucket asset it mints a **signed
+download URL by forwarding the caller's own access token** ([`src/lib/storage.ts`](src/lib/storage.ts)).
+That one call is three things at once — the existence check (nothing at that path → 400
+`media_not_uploaded`, refused here instead of queued to fail on a GPU), the authorization check
+(Storage RLS again, same policy that governed the upload), and the fetchable URL the queue job
+carries to the ML worker. The asset flips `PENDING → READY` on success. No storage service
+credential exists in this process; the only Supabase values it holds are the public URL and the
+publishable key.
+
+The old `mediaUrl` escape hatch (bucket `external`) still works for URL-addressable media and
+skips all of the above.
+
 ## Queue — this process only produces
 
 `POST /analyze` records the analysis, then publishes to the `analysis` queue via
@@ -176,6 +201,9 @@ here as well as in `packages/db/.env`.
 `REDIS_URL` is needed for `POST /analyze` — `docker compose -f infra/docker/docker-compose.yml up -d`.
 `@repo/queue` connects lazily, so a test that only drives `/health` or `GET /analyze/:id` does not
 need Redis running.
+
+`SUPABASE_PUBLISHABLE_KEY` is the public (anon) key, not a secret — Storage's gateway wants it as
+the `apikey` header when `POST /analyze` mints signed media URLs with the caller's JWT.
 
 ## Verify
 

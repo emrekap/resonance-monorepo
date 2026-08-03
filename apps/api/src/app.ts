@@ -3,6 +3,7 @@ import { logger } from 'hono/logger';
 import { health } from './routes/health';
 import { analyze } from './routes/analyze';
 import { connectedAccounts } from './routes/connected-accounts';
+import { media } from './routes/media';
 
 /**
  * The Resonance app backend (BFF).
@@ -15,7 +16,8 @@ const app = new Hono()
   .use('*', logger())
   .route('/health', health)
   .route('/analyze', analyze)
-  .route('/connected-accounts', connectedAccounts);
+  .route('/connected-accounts', connectedAccounts)
+  .route('/media', media);
 
 export type AppType = typeof app;
 export default app;

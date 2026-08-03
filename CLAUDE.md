@@ -167,13 +167,21 @@ Instagram/TikTok answer 501 until their `PlatformProvider` lands. See
 [`apps/api/README.md`](apps/api/README.md). Route auth/state logic is smoke-tested hermetically via
 `app.request()`; the connect flow has not yet run against real Google credentials.
 
-**TODO:** Supabase Storage signed-upload flow so `media_assets` holds real objects instead of the
-`external` bucket placeholder (until then `POST /analyze` 400s on a non-`external` asset); the
-Yeo-7 parcellation that fills `analysis_results` timeline bands and the calibration behind
-`resonanceScore` (both null today — see [`apps/worker/README.md`](apps/worker/README.md)); deploy
-images for `apps/worker` + the ml worker; generate `@repo/ml-client` from the ml OpenAPI; run the
-YouTube connect flow against real Google credentials + Supabase Google login end-to-end;
-Instagram/TikTok `PlatformProvider`s; Facebook/TikTok login providers; scaffold `apps/web`.
+**Uploads (done):** the private `media` Storage bucket (workspace-scoped RLS in the `security_rls`
+migration §7, 500 MiB / `video|audio|image` caps in `media_bucket_limits`); `POST /media` registers
+an asset and the app streams the file to Storage with the user's own JWT (`expo-file-system`
+`UploadTask`, progress + cancel); `POST /analyze { mediaAssetId }` mints a signed download URL by
+forwarding the caller's token (existence + authz check in one, no storage secret in the API), flips
+the asset READY, and queues the job; `(app)/analysis/[id]` polls to completion. Mobile grew reusable
+`Button`/`Card`/`ProgressBar` components. The flow is typechecked + route-smoke-tested; not yet run
+end-to-end against a device + live worker.
+
+**TODO:** the Yeo-7 parcellation that fills `analysis_results` timeline bands and the calibration
+behind `resonanceScore` (both null today — see [`apps/worker/README.md`](apps/worker/README.md));
+deploy images for `apps/worker` + the ml worker; generate `@repo/ml-client` from the ml OpenAPI; run
+the YouTube connect flow against real Google credentials + Supabase Google login end-to-end; run the
+upload→analyze flow on-device against a live GPU worker; Instagram/TikTok `PlatformProvider`s;
+Facebook/TikTok login providers; scaffold `apps/web`.
 
 ## Conventions
 

@@ -13,13 +13,17 @@ src/
     _layout.tsx           # providers + Stack.Protected guards — THE auth gate
     (onboarding)/         # signed-out: welcome → sign-in / sign-up (modals)
     (app)/                # signed-in: tabs
-      index.tsx           #   Home (analyses placeholder)
+      index.tsx           #   Home — pick media → upload → analyze
       accounts.tsx        #   Connected accounts (list / connect / disconnect)
-  components/             # themed primitives + social buttons
+      analysis/[id].tsx   #   Poll GET /analyze/:id until the job settles
+  components/             # themed primitives: Button, Card, ProgressBar, social buttons
+  hooks/
+    use-media-analysis.ts # pick → register → upload → enqueue, as one state machine
   lib/
     supabase.ts           # the auth client (AsyncStorage, PKCE, fg-only refresh)
     auth.ts               # signInWithProvider / createSessionFromUrl
     api.ts                # RPC client, injects the Supabase access token
+    media.ts              # pickers + the streaming Storage upload (UploadTask)
     social.ts             # login-provider + connectable-platform registries
   providers/
     session-provider.tsx  # the one piece of auth state everything derives from
@@ -51,6 +55,26 @@ one entry flip once the provider is enabled in the Supabase dashboard.
 
 - Auth → Providers → enable **Google** (client id + secret from Google Cloud Console).
 - Auth → URL Configuration → Redirect URLs: add `resonance://**` (builds) and `exp://**` (Expo Go).
+
+## Uploads — straight to Storage, analysis over the queue
+
+The home screen's analyze flow ([`use-media-analysis.ts`](src/hooks/use-media-analysis.ts)) is a
+four-phase pipeline:
+
+1. **pick** — `expo-image-picker` for video/photos, `expo-document-picker` (`audio/*`) for music;
+2. **register** — `POST /media` writes the `media_assets` row and answers with the Storage
+   location (`media` bucket, `{workspace_id}/{asset_id}`);
+3. **upload** — `expo-file-system`'s `UploadTask` streams the file from disk to Supabase Storage
+   with the *user's* JWT — no base64, nothing held in JS memory, progress + cancel for free. The
+   bucket's RLS policy (first path segment = a workspace you belong to) authorizes the write; the
+   API never sees the bytes;
+4. **analyze** — `POST /analyze { mediaAssetId }` verifies the object landed (signed-URL mint
+   under the same RLS), flips it READY, queues the GPU job, and the app navigates to
+   `analysis/[id]`, which polls every 2.5s until the status settles.
+
+Images upload but stop at "saved" — TRIBE takes video/audio, so the app doesn't queue an analysis
+the API would refuse. The bucket caps objects at 500 MiB and `video/* audio/* image/*` MIME types
+(enforced by Storage, before RLS).
 
 ## Connected accounts — data access, not login
 

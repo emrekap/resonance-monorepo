@@ -20,6 +20,11 @@ export type AuthEnv = {
   Variables: {
     user: AuthUser;
     db: <T>(fn: (tx: Tx) => Promise<T>) => Promise<T>;
+    /**
+     * The verified raw bearer token, for calls the API makes *as the caller* —
+     * e.g. minting Storage signed URLs under the caller's own RLS scope.
+     */
+    accessToken: string;
   };
 };
 
@@ -88,6 +93,7 @@ export const requireAuth = createMiddleware<AuthEnv>(async (c, next) => {
   };
 
   c.set('user', user);
+  c.set('accessToken', token);
   c.set('db', (fn) => withUser(user.id, fn));
 
   await next();

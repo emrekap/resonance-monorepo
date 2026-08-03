@@ -32,6 +32,8 @@ export default function AppLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="link" size={size} color={color} />,
         }}
       />
+      {/* Reached by push from the analyze flow — not a tab of its own. */}
+      <Tabs.Screen name="analysis/[id]" options={{ title: 'Analysis', href: null }} />
     </Tabs>
   );
 }

@@ -1,21 +1,26 @@
 import { Link } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { Button } from '@/components/button';
+import { Card } from '@/components/card';
+import { ProgressBar } from '@/components/progress-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { PHASE_LABELS, useMediaAnalysis } from '@/hooks/use-media-analysis';
 import { useSession } from '@/providers/session-provider';
 
 export default function HomeScreen() {
-  const theme = useTheme();
   const { session, signOut } = useSession();
+  const analysis = useMediaAnalysis();
 
   const user = session?.user;
   const displayName =
     (typeof user?.user_metadata?.full_name === 'string' && user.user_metadata.full_name) ||
     user?.email ||
     'there';
+
+  const busy = analysis.phase !== 'idle';
 
   return (
     <ThemedView style={styles.root}>
@@ -26,32 +31,75 @@ export default function HomeScreen() {
         </ThemedText>
       </View>
 
-      {/* Placeholder until the analyze flow ships in the app. */}
-      <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
-        <ThemedText type="smallBold">No analyses yet</ThemedText>
+      <Card>
+        <ThemedText type="smallBold">New analysis</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
-          Connect a channel first so results can be ranked against your own audience.
+          Pick something from your library. It uploads privately to your workspace and lands on
+          the model.
+        </ThemedText>
+
+        {busy ? (
+          <View style={styles.progress}>
+            <ThemedText type="small" themeColor="textSecondary">
+              {PHASE_LABELS[analysis.phase as Exclude<typeof analysis.phase, 'idle'>]}
+            </ThemedText>
+            {analysis.phase === 'uploading' ? (
+              <>
+                <ProgressBar progress={analysis.progress} />
+                <Button
+                  label="Cancel upload"
+                  variant="danger"
+                  size="sm"
+                  onPress={analysis.cancel}
+                />
+              </>
+            ) : null}
+          </View>
+        ) : (
+          <View style={styles.actions}>
+            <Button
+              label="Video"
+              icon="videocam"
+              fullWidth
+              onPress={() => analysis.start('video')}
+            />
+            <Button
+              label="Photo"
+              icon="image"
+              variant="secondary"
+              fullWidth
+              onPress={() => analysis.start('image')}
+            />
+            <Button
+              label="Audio"
+              icon="musical-notes"
+              variant="secondary"
+              fullWidth
+              onPress={() => analysis.start('audio')}
+            />
+          </View>
+        )}
+
+        {analysis.error ? (
+          <ThemedText type="small" themeColor="danger">
+            {analysis.error}
+          </ThemedText>
+        ) : null}
+      </Card>
+
+      <Card>
+        <ThemedText type="smallBold">Better with your audience</ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">
+          Connect a channel so results can be ranked against your own audience.
         </ThemedText>
         <Link href="/accounts" asChild>
-          <Pressable
-            accessibilityRole="button"
-            style={({ pressed }) => [
-              styles.cardAction,
-              { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 },
-            ]}
-          >
-            <ThemedText type="smallBold" style={{ color: theme.onAccent }}>
-              Connect an account
-            </ThemedText>
-          </Pressable>
+          <Button label="Connect an account" variant="outline" size="sm" />
         </Link>
-      </View>
+      </Card>
 
-      <Pressable accessibilityRole="button" onPress={signOut} style={styles.signOut}>
-        <ThemedText type="small" themeColor="danger">
-          Sign out
-        </ThemedText>
-      </Pressable>
+      <View style={styles.signOut}>
+        <Button label="Sign out" variant="danger" size="sm" onPress={signOut} />
+      </View>
     </ThemedView>
   );
 }
@@ -65,21 +113,17 @@ const styles = StyleSheet.create({
   header: {
     gap: Spacing.two,
   },
-  card: {
-    borderRadius: 14,
-    padding: Spacing.three,
+  actions: {
     gap: Spacing.two,
+    marginTop: Spacing.one,
   },
-  cardAction: {
-    alignSelf: 'flex-start',
-    borderRadius: 10,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    marginTop: Spacing.two,
+  progress: {
+    gap: Spacing.two,
+    marginTop: Spacing.one,
+    alignItems: 'stretch',
   },
   signOut: {
     marginTop: 'auto',
     alignItems: 'center',
-    paddingVertical: Spacing.three,
   },
 });

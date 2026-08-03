@@ -4,14 +4,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import { AppState, Platform } from 'react-native';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_KEY;
+const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const key = process.env.EXPO_PUBLIC_SUPABASE_KEY;
 
-if (!supabaseUrl || !supabaseKey) {
+if (!url || !key) {
   throw new Error(
     'EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_KEY are not set — see apps/mobile/.env.example',
   );
 }
+
+/**
+ * Exported for the one caller that speaks to Supabase outside this client:
+ * the Storage upload (`lib/media.ts`) streams straight to the REST endpoint
+ * via `UploadTask`, so it needs the base URL and the publishable key by hand.
+ */
+export const supabaseUrl = url;
+export const supabaseKey = key;
 
 /**
  * The Supabase client — auth only, from this app's point of view. Data goes
@@ -22,7 +30,7 @@ if (!supabaseUrl || !supabaseKey) {
  * tab: the authorization code returned on the deep link is useless without the
  * verifier held here. `detectSessionInUrl` is a web-only affordance.
  */
-export const supabase = createClient(supabaseUrl, supabaseKey, {
+export const supabase = createClient(url, key, {
   auth: {
     storage: AsyncStorage,
     autoRefreshToken: true,

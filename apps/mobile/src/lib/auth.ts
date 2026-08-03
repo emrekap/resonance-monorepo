@@ -48,10 +48,6 @@ export async function signInWithProvider(provider: Provider): Promise<Session | 
     provider,
     options: { redirectTo: authRedirectTo, skipBrowserRedirect: true },
   });
-  console.log('data: ', data);
-  console.log('error: ', error);
-  console.log(new URL(data.url ?? 'https://anan.com').searchParams.get('redirect_to'));
-
   if (error) throw error;
 
   const result = await WebBrowser.openAuthSessionAsync(data.url, authRedirectTo);

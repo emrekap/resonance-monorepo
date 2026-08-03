@@ -4,8 +4,9 @@ import * as Linking from 'expo-linking';
 import { useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
+import { Button } from '@/components/button';
 import { SocialButton } from '@/components/social-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -103,7 +104,16 @@ export default function AccountsScreen() {
 
   return (
     <ThemedView style={styles.root}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={accounts.isRefetching}
+            onRefresh={() => accounts.refetch()}
+            tintColor={theme.textSecondary}
+          />
+        }
+      >
         <View style={styles.section}>
           <ThemedText type="smallBold" themeColor="textSecondary">
             CONNECTED
@@ -136,18 +146,19 @@ export default function AccountsScreen() {
                     </ThemedText>
                   </ThemedText>
                 </View>
-                <ThemedText
-                  type="small"
-                  themeColor="danger"
+                <Button
+                  label="Disconnect"
+                  variant="danger"
+                  size="sm"
+                  busy={disconnect.isPending && disconnect.variables === account.id}
+                  disabled={disconnect.isPending}
                   onPress={() =>
                     confirmDisconnect(
                       account.id,
                       account.handle ?? PLATFORM_LABELS[account.platform],
                     )
                   }
-                >
-                  Disconnect
-                </ThemedText>
+                />
               </View>
             ))
           )}
