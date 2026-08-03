@@ -25,12 +25,20 @@ src/
   lib/                # small shared helpers, no layer
     queue.ts          # the `analysis` producer (BullMQ)
     media.ts  workspace.ts
+    oauth.ts          # connect-state HMAC + AES-256-GCM token sealing
+    platforms.ts      # PlatformProvider registry (YouTube live, IG/TikTok stubs)
   routes/
     health.ts         # flat: one route, no validation, no DB
     analyze/
       index.ts        # composes the domain + mounts requireAuth
       create.ts       # POST /analyze
       get.ts          # GET  /analyze/:jobId
+    connected-accounts/
+      index.ts        # composes; /callback sits BEFORE requireAuth
+      list.ts         # GET    /connected-accounts
+      start.ts        # POST   /connected-accounts/:platform/start
+      callback.ts     # GET    /connected-accounts/callback  (browser redirect)
+      disconnect.ts   # DELETE /connected-accounts/:id
 ```
 
 Each route file exports its own method-chained `Hono`, and the domain's `index.ts` composes them
@@ -110,6 +118,32 @@ if a client ever needs the model shapes.
 Also **give success responses an explicit status** (`c.json(data, 200)`). Without it Hono types the
 branch as `ContentfulStatusCode`, which overlaps 404, and `if (res.status === 404)` stops narrowing
 on the client.
+
+## Connected accounts — platform OAuth, not login
+
+Login is Supabase's job (the client talks to GoTrue directly; this API only verifies the JWT).
+`/connected-accounts` is the **other** OAuth: a workspace granting the API offline, read-only access
+to content platforms (YouTube today; Instagram/TikTok when their `PlatformProvider` lands in
+[`src/lib/platforms.ts`](src/lib/platforms.ts)). A workspace can hold **several accounts per
+platform** — the unique key is `[workspaceId, platform, platformAccountId]`.
+
+```text
+app ── POST /connected-accounts/youtube/start ──▶ { url }          (JWT-authed, state minted here)
+app opens url ──▶ Google consent ──▶ GET /connected-accounts/callback?code&state
+callback: verify state ─ exchange code ─ fetch channel ─ withUser(profileId) upsert ─ 302 returnTo
+```
+
+The callback is a bare browser redirect — no Authorization header — so identity rides in the
+HMAC-signed `state` minted by `/start` while the request still had a verified JWT (10-minute
+expiry, `OAUTH_STATE_SECRET`). The write still runs under `withUser(state.profileId)`, so RLS
+applies exactly as if the user had called with a token; membership is re-resolved rather than
+trusted from the state. Tokens are sealed with AES-256-GCM (`TOKEN_ENCRYPTION_KEY`) before they
+touch Postgres — the schema comment on `ConnectedAccount` is the contract. Post-verification
+failures redirect back into the app as `returnTo?error=…` instead of dead-ending the tab; an
+unverifiable state answers JSON 400, because redirecting on a forged state is an open redirect.
+
+Disconnect keeps the row (channels and old analyses stay anchored), drops the tokens immediately,
+and sets `purgeAfter` for the platform-ToS deletion sweep.
 
 ## Queue — this process only produces
 

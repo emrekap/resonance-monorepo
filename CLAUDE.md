@@ -157,12 +157,23 @@ Redis plus bull-board in `infra/docker/`. Cross-language delivery and payload va
 end-to-end against a real Redis; the Prisma writes in `apps/worker` are typechecked but have not run
 against a database yet.
 
+**Mobile + social (done):** `apps/mobile` (Expo SDK 57, `expo-router`, `src/app` tree) — Supabase
+Google login via the browser PKCE flow, `Stack.Protected` route groups (`(onboarding)` vs `(app)`),
+and a connected-accounts screen on the RPC client + TanStack Query; `apps/api` grew the
+`/connected-accounts` domain (list / `:platform/start` / OAuth `callback` / disconnect) with
+HMAC-signed connect state and AES-256-GCM-sealed tokens — YouTube (Google OAuth) implemented,
+Instagram/TikTok answer 501 until their `PlatformProvider` lands. See
+[`apps/mobile/README.md`](apps/mobile/README.md) and the connected-accounts section of
+[`apps/api/README.md`](apps/api/README.md). Route auth/state logic is smoke-tested hermetically via
+`app.request()`; the connect flow has not yet run against real Google credentials.
+
 **TODO:** Supabase Storage signed-upload flow so `media_assets` holds real objects instead of the
 `external` bucket placeholder (until then `POST /analyze` 400s on a non-`external` asset); the
 Yeo-7 parcellation that fills `analysis_results` timeline bands and the calibration behind
 `resonanceScore` (both null today — see [`apps/worker/README.md`](apps/worker/README.md)); deploy
-images for `apps/worker` + the ml worker; generate `@repo/ml-client` from the ml OpenAPI; scaffold
-`apps/mobile` + `apps/web`.
+images for `apps/worker` + the ml worker; generate `@repo/ml-client` from the ml OpenAPI; run the
+YouTube connect flow against real Google credentials + Supabase Google login end-to-end;
+Instagram/TikTok `PlatformProvider`s; Facebook/TikTok login providers; scaffold `apps/web`.
 
 ## Conventions
 
