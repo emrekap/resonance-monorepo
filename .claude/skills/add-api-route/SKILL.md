@@ -107,11 +107,16 @@ const res = await api.widgets.$post({ json: { name: 'x' } }); // fully typed
   `.route()`; a handler assigned to a bare variable and registered separately loses
   `c.req.valid()` inference and collapses `AppType` to `unknown`.
 - **Rebuild after route changes** — `dist/` is gitignored; a stale d.ts = stale client types.
-- **No `@repo/db` types in a response.** `AppType` is consumed by the Expo and Next typechecks, so a
-  Prisma type — even an enum — makes those tsconfigs resolve the generated client and its Bun/Node
-  globals. It fails `@repo/api-contract`'s typecheck immediately. Map DB enums through
-  `src/lib/wire.ts` (`as const satisfies Record<TheEnum, string>`, which fails the build if the
-  Postgres enum drifts). After building, `grep '@repo/db' apps/api/dist/app.d.ts` must be empty.
+- **Enums in a response come from `@repo/db/enums`, never the `@repo/db` barrel.** `AppType` is
+  consumed by the Expo and Next typechecks; the barrel pulls in `client.ts`/`rls.ts`, whose
+  `.ts`-extension imports need `allowImportingTsExtensions` (Bun tsconfig only) and blow up with
+  TS5097 there. The generated `enums.ts` is a leaf that imports nothing and typechecks clean under
+  both client configs, so return the Prisma enum as-is — no wire mapping to keep in sync. Note that
+  declaration emit rewrites specifiers to the shortest that resolves, which is why `@repo/db` no
+  longer re-exports the enums. After building, `grep "@repo/db'" apps/api/dist/app.d.ts` (trailing
+  quote = barrel only) must be empty.
+- **Other `@repo/db` types still must not reach a response** — model types carry `Decimal`/`JsonValue`
+  and resolve through the barrel. Map them to plain shapes in the route.
 - **Give success responses an explicit status** (`c.json(data, 200)`). Without it Hono types the
   branch as `ContentfulStatusCode`, which overlaps the error statuses, and `if (res.status === 404)`
   stops narrowing on the client.

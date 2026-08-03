@@ -171,8 +171,9 @@ images for `apps/worker` + the ml worker; generate `@repo/ml-client` from the ml
 - **Adding/editing an API route?** Use the `add-api-route` skill (`.claude/skills/`). A directory per
   domain, a file per route: each route file exports its own method-chained `Hono`, and the domain's
   `index.ts` composes them with `.route()`. Schema, validation and Prisma calls live in the route's
-  own file; `src/lib/*` holds only what a second route needs. Responses must not carry `@repo/db`
-  types — map enums through `src/lib/wire.ts`.
+  own file; `src/lib/*` holds only what a second route needs. Responses may carry Prisma enums, but
+  import them from `@repo/db/enums` (a leaf module, browser-safe) — never from the `@repo/db` barrel,
+  which drags `client.ts` into the Expo/Next typecheck.
 - **Adding a package or app?** Use the `add-package` skill (`.claude/skills/`).
 - **Touching the queue?** Payload shapes live in `packages/queue/src/contract.ts` and are mirrored by
   hand in `apps/ml/queue_contract.py` — change both. Prefer `.nullish()` over `.optional()` in the

@@ -3,7 +3,6 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { AuthEnv } from '../../middleware/auth';
 import { externalUrl } from '../../lib/media';
-import { toWireAnalysisStatus, toWireMediaKind } from '../../lib/wire';
 
 const param = z.object({ id: z.uuid() });
 
@@ -50,7 +49,7 @@ export const getAnalysisById = new Hono<AuthEnv>().get(
     return c.json(
       {
         jobId: analysis.id,
-        status: toWireAnalysisStatus(analysis.status),
+        status: analysis.status,
         workspaceId: analysis.workspaceId,
         error: analysis.error,
         createdAt: analysis.createdAt,
@@ -58,7 +57,7 @@ export const getAnalysisById = new Hono<AuthEnv>().get(
         completedAt: analysis.completedAt,
         media: {
           id: analysis.mediaAsset.id,
-          kind: toWireMediaKind(analysis.mediaAsset.kind),
+          kind: analysis.mediaAsset.kind,
           url: externalUrl(analysis.mediaAsset),
         },
         result: analysis.result,

@@ -6,7 +6,16 @@
     "declaration": true,
     "emitDeclarationOnly": true,
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+
+    // Keep the incremental state INSIDE dist/. `incremental` comes from the base
+    // config, and tsc trusts its buildinfo without checking that the files it
+    // claims to have emitted still exist — so a buildinfo that outlives its dist/
+    // makes the next build a no-op that emits nothing. Turbo then caches an empty
+    // `dist/**` for that hash, and every later cache hit restores nothing: no
+    // app.d.ts, and @repo/api-contract cannot resolve AppType. Co-locating them
+    // means `rm -rf dist` can never leave the state half-deleted.
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
   "include": ["src/**/*.ts"]
 }

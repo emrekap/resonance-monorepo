@@ -10,6 +10,26 @@ never writes these tables with a second ORM (avoids schema drift).
 
 > Adding or changing a model? Use the **`add-db-model`** skill (`.claude/skills/`).
 
+## Entry points
+
+Three, and the split is deliberate — only the first is server-only:
+
+| Import             | Gives you                                                          | Safe in a client typecheck? |
+| ------------------ | ------------------------------------------------------------------ | --------------------------- |
+| `@repo/db`         | `prisma`, `prismaService`, `withUser`, `Tx`, `Prisma`, model types | **No**                      |
+| `@repo/db/enums`   | every schema enum (`as const` object + type)                       | Yes — imports nothing       |
+| `@repo/db/browser` | enums + model types, no `PrismaClient`                             | Yes                         |
+
+The barrel is not safe outside Bun because `client.ts` and `rls.ts` import with `.ts` extensions,
+which needs `allowImportingTsExtensions` — set only in `@repo/tsconfig/bun.json`. Everywhere else
+that is a TS5097 error.
+
+**The barrel deliberately does not re-export the enums.** It used to, and that was enough to break
+`apps/api`'s `AppType` boundary: TypeScript's declaration emit discards the specifier you wrote and
+recomputes the shortest one that resolves to the symbol, so `@repo/db` won over `@repo/db/enums`
+even where the route imported the subpath. With the re-export gone the subpath is the only way in.
+See the comment in [`src/index.ts`](src/index.ts).
+
 ---
 
 ## The security model

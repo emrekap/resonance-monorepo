@@ -23,8 +23,6 @@ src/
   app.ts              # mounts the domains — AppType is `typeof app`
   middleware/auth.ts  # Supabase JWT -> c.var.db
   lib/                # small shared helpers, no layer
-    wire.ts           # DB enum -> wire literal (the AppType boundary rule)
-    wire-check.ts     # proves wire.ts still covers the Postgres enums
     queue.ts          # the `analysis` producer (BullMQ)
     media.ts  workspace.ts
   routes/
@@ -78,25 +76,36 @@ like `/health` stay public. It runs before everything mounted below it, and rout
 **Never import `prismaService` here.** That is the BYPASSRLS role and it belongs to the queue
 worker. `@repo/db` connects lazily, so this process only needs `APP_USER_DATABASE_URL`.
 
-### Keep `@repo/db` types out of responses
+### Enums in responses come from `@repo/db/enums`
 
-`AppType` is consumed by the Expo and Next typechecks. Returning a Prisma type — even an enum —
-makes those tsconfigs resolve the generated client and its Bun/Node globals, and it fails
-`@repo/api-contract`'s typecheck before it ever reaches a client. Map DB enums through
-[`src/lib/wire.ts`](src/lib/wire.ts).
+`AppType` is consumed by the Expo and Next typechecks, so anything a response names ends up in
+_their_ program. The **barrel** `@repo/db` is not safe there: it pulls in `client.ts` and `rls.ts`,
+whose `.ts`-extension imports need `allowImportingTsExtensions` — a flag only
+`@repo/tsconfig/bun.json` sets. A client typecheck that follows it dies on TS5097.
 
-The subtlety worth knowing: **`wire.ts` imports nothing from `@repo/db`, not even `import type`.** A
-type-only import is still a module reference that TypeScript follows out of `dist/app.d.ts`, so a
-mapper that names the Prisma enum in its own signature reintroduces the exact leak it was written to
-close. The keys are spelled out instead, and [`src/lib/wire-check.ts`](src/lib/wire-check.ts) —
-which nothing imports, and which `tsc` typechecks anyway because it is under `src/` — asserts
-`satisfies Record<TheEnum, string>` so a Postgres enum gaining a value fails the build.
+Prisma 7's generated enums are a different story. `src/generated/enums.ts` is a **leaf module that
+imports nothing** — plain `as const` objects — and it typechecks clean under both client tsconfigs
+(verified against `react-native.json` and `nextjs.json`, and it still passes with `skipLibCheck`
+off). So routes return the Prisma enum directly; there is no hand-maintained wire mapping and
+nothing to keep in sync.
 
-After building, this must come back empty:
+The one non-obvious part is **which specifier** ends up in `dist/app.d.ts`. Declaration emit does
+not keep the one you wrote — it recomputes a specifier from the symbol's declaration file and picks
+the shortest that resolves. So `@repo/db` re-exporting the enums was enough to poison the boundary
+even when the route imported from `@repo/db/enums`. That re-export is gone
+([`packages/db/src/index.ts`](../../packages/db/src/index.ts) says why), which leaves
+`@repo/db/enums` the only route to them and makes the rule hold by construction.
+
+Import enums from `@repo/db/enums`; keep `@repo/db` for `withUser`, `prismaService`, `Tx` and
+`Prisma`. After building, this must come back empty — note the trailing `'`, which matches the
+barrel but not the subpath:
 
 ```bash
-grep '@repo/db' apps/api/dist/app.d.ts
+grep "@repo/db'" apps/api/dist/app.d.ts
 ```
+
+`@repo/db/browser` is the same deal one level up — enums _plus_ model types, also verified clean —
+if a client ever needs the model shapes.
 
 Also **give success responses an explicit status** (`c.json(data, 200)`). Without it Hono types the
 branch as `ContentfulStatusCode`, which overlaps 404, and `if (res.status === 404)` stops narrowing

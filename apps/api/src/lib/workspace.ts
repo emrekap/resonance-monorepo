@@ -1,4 +1,5 @@
-import { WorkspaceKind, type Tx } from '@repo/db';
+import { type Tx } from '@repo/db';
+import { WorkspaceKind } from '@repo/db/enums';
 
 /**
  * The workspace a request acts in.

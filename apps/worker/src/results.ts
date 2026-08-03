@@ -1,5 +1,6 @@
 import { UnrecoverableError, type Job } from 'bullmq';
-import { AnalysisStatus, prismaService, type Prisma } from '@repo/db';
+import { prismaService, type Prisma } from '@repo/db';
+import { AnalysisStatus } from '@repo/db/enums';
 import {
   RESULT_JOB,
   analysisFailedSchema,

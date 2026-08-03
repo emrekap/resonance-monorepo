@@ -1,13 +1,15 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { AnalysisStatus, MediaKind, MediaSource, MediaStatus } from '@repo/db';
+// Enums come from `@repo/db/enums`, not `@repo/db`. Both re-export the same
+// objects, but `status` below reaches `dist/app.d.ts`, and only the leaf is
+// safe to name there — see the note in apps/api/README.md.
+import { AnalysisStatus, MediaKind, MediaSource, MediaStatus } from '@repo/db/enums';
 import type { AnalysisJob, Modality } from '@repo/queue';
 import type { AuthEnv } from '../../middleware/auth';
 import { EXTERNAL_BUCKET, externalUrl } from '../../lib/media';
 import { enqueueAnalysis } from '../../lib/queue';
 import { resolveWorkspaceId } from '../../lib/workspace';
-import { toWireAnalysisStatus } from '../../lib/wire';
 
 const body = z
   .object({
@@ -143,5 +145,5 @@ export const createAnalysis = new Hono<AuthEnv>().post('/', zValidator('json', b
     return c.json({ error: 'queue_unavailable' as const }, 503);
   }
 
-  return c.json({ jobId: prepared.analysisId, status: toWireAnalysisStatus(prepared.status) }, 202);
+  return c.json({ jobId: prepared.analysisId, status: prepared.status }, 202);
 });
