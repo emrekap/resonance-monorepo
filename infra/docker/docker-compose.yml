@@ -1,0 +1,79 @@
+# Local queue stack for Resonance.
+#
+#   docker compose -f infra/docker/docker-compose.yml up -d              # redis
+#   docker compose -f infra/docker/docker-compose.yml --profile tools up -d  # + bull-board
+#
+# Redis only — the three processes that talk over it run on the host, where
+# their reloaders and (for apps/ml) the GPU are:
+#
+#   cd apps/api    && bun run dev     # produces to `analysis`
+#   cd apps/ml     && python worker.py # consumes it, produces to `analysis-results`
+#   cd apps/worker && bun run dev     # consumes that, writes Postgres
+#
+# Postgres is not here on purpose: the database is Supabase, and running a
+# second local one would mean a schema and a set of RLS policies that drift from
+# the only one that matters.
+
+name: resonance
+
+services:
+  redis:
+    image: redis:8-alpine
+    container_name: resonance-redis
+    restart: unless-stopped
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    command:
+      - redis-server
+      # BullMQ REQUIRES noeviction. Every other policy lets Redis drop keys
+      # under memory pressure, and the keys it would drop are job hashes — jobs
+      # would vanish from the queue with no error anywhere. BullMQ checks this
+      # at startup and warns.
+      - --maxmemory-policy
+      - noeviction
+      # Cap memory so a runaway backlog can't take the whole machine down. With
+      # noeviction, writes fail loudly at the ceiling instead of silently
+      # dropping jobs — which is the behaviour you want.
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-512mb}
+      # AOF so a `docker compose restart` doesn't lose queued GPU jobs. RDB
+      # snapshots alone would drop up to a minute of them.
+      - --appendonly
+      - 'yes'
+      - --appendfsync
+      - everysec
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # Queue dashboard: what's waiting, active, completed, failed — and the full
+  # stack trace of a failed job, which is the one place an ML traceback survives
+  # (`analyses.error` only gets the one-line message).
+  #
+  # Behind a profile so plain `up` stays lean:
+  #   docker compose --profile tools up -d   →  http://localhost:3010
+  bull-board:
+    image: deadly0/bull-board:latest
+    container_name: resonance-bull-board
+    profiles: ['tools']
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - '${BULL_BOARD_PORT:-3010}:3000'
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
+      # Must match QUEUE_PREFIX in packages/queue/src/contract.ts, or the board
+      # connects fine and shows two permanently empty queues.
+      BULL_PREFIX: resonance
+      BULL_QUEUES: analysis,analysis-results
+
+volumes:
+  redis-data:

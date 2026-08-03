@@ -21,3 +21,5 @@ export function createApiClient(...args: Parameters<typeof hc<AppType>>) {
 }
 
 export type ApiClient = ReturnType<typeof createApiClient>;
+
+// const api = createApiClient('http://localhost:3000');

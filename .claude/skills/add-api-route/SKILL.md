@@ -22,27 +22,48 @@ trace_path(project, function_name: "<handler>", mode: "cross_service")  # api �
 
 Then `Read` the files you're about to change — the graph is a snapshot, not the live bytes.
 
-## 1. Create/extend the route module (`apps/api/src/routes/<name>.ts`)
+## 1. A directory per domain, a file per route
 
-Export a **method-chained** Hono instance (chaining is what makes the types inferrable). Validate
-input with `@hono/zod-validator` + `zod`; read validated data via `c.req.valid(...)`; return typed
-JSON with `c.json(...)`.
+```text
+routes/health.ts              # flat: one route, no validation, no DB
+routes/analyze/
+  index.ts                    # composes the domain + mounts requireAuth
+  create.ts                   # POST /analyze
+  get.ts                      # GET  /analyze/:jobId
+lib/                          # only what more than one route needs
+```
+
+Every route file exports its **own method-chained `Hono`** — chaining is what makes the types
+inferrable — and the domain's `index.ts` composes them with plain `.route()`, the same call `app.ts`
+uses to mount the domain. No factory, no handler registry: `route()` merges each sub-app's schema
+upward into `AppType`.
 
 ```ts
-import { Hono } from 'hono';
-import { randomUUIDv7 } from 'bun';
-import { zValidator } from '@hono/zod-validator';
-import { z } from 'zod';
-
+// routes/widgets/create.ts — schema, validation and Prisma all live here
 const body = z.object({ name: z.string().min(1) });
 
-export const widgets = new Hono()
-  .post('/', zValidator('json', body), (c) => {
-    const { name } = c.req.valid('json');
-    return c.json({ id: randomUUIDv7(), name }, 201);
-  })
-  .get('/:id', (c) => c.json({ id: c.req.param('id') }));
+export const createWidget = new Hono<AuthEnv>().post('/', zValidator('json', body), async (c) => {
+  const { name } = c.req.valid('json');
+  const { id: profileId } = c.get('user');
+
+  const widget = await c.var.db((tx) => tx.widget.create({ data: { name, profileId } }));
+  return c.json({ id: widget.id, name: widget.name }, 201);
+});
 ```
+
+```ts
+// routes/widgets/index.ts — one .route() per file
+export const widgets = new Hono<AuthEnv>()
+  .use('*', requireAuth)
+  .route('/', createWidget)
+  .route('/', getWidget);
+```
+
+Keep route-local schemas and queries in the route's own file. Promote to `lib/` **only** when a
+second route needs the same thing — a helper with one caller belongs next to that caller.
+
+A one-route domain with no validation and no DB stays a flat file (`routes/health.ts`). Don't
+pre-split it.
 
 ## 2. Mount it in `apps/api/src/app.ts`
 
@@ -82,15 +103,32 @@ const res = await api.widgets.$post({ json: { name: 'x' } }); // fully typed
 
 ## Rules / gotchas
 
-- **Never break the `.route()` / handler chain** — types collapse to `unknown`.
+- **Never break the chain.** Keep `.post()/.get()` chained off `new Hono()` and compose with
+  `.route()`; a handler assigned to a bare variable and registered separately loses
+  `c.req.valid()` inference and collapses `AppType` to `unknown`.
 - **Rebuild after route changes** — `dist/` is gitignored; a stale d.ts = stale client types.
+- **No `@repo/db` types in a response.** `AppType` is consumed by the Expo and Next typechecks, so a
+  Prisma type — even an enum — makes those tsconfigs resolve the generated client and its Bun/Node
+  globals. It fails `@repo/api-contract`'s typecheck immediately. Map DB enums through
+  `src/lib/wire.ts` (`as const satisfies Record<TheEnum, string>`, which fails the build if the
+  Postgres enum drifts). After building, `grep '@repo/db' apps/api/dist/app.d.ts` must be empty.
+- **Give success responses an explicit status** (`c.json(data, 200)`). Without it Hono types the
+  branch as `ContentfulStatusCode`, which overlaps the error statuses, and `if (res.status === 404)`
+  stops narrowing on the client.
+- **`requireAuth` goes on the domain's `index.ts`**, not globally, so `/health` stays public.
+  Query through `c.var.db` (= `withUser` bound to the caller) and let RLS scope the rows — do not
+  re-implement the policy as a `where` clause.
 - **No heavy/GPU work in a route** — enqueue a job (Redis/BullMQ) for the `apps/ml` worker and return
   a `jobId`; the client polls.
-- **No ad-hoc DB access in routes** — go through Prisma (`@repo/db`); Prisma is the single schema owner.
+- **Select columns explicitly** for anything returned to a client. `include` drags in `BigInt`
+  columns (`JSON.stringify` throws) and dev telemetry like `analysis_results.raw_stats`.
+- **One transaction per request.** Open `c.var.db(...)` once and do all the writes inside it.
 - **Re-index after the route lands** — a stale graph hides the endpoint from future `search_graph`
   and `trace_path` calls, exactly like a stale d.ts hides the types.
 
 ## Verify (hermetic — no server needed)
+
+`app.request()` exercises the whole stack with no listening server:
 
 ```ts
 import app from './src/app';
@@ -101,3 +139,7 @@ const r = await app.request('/widgets', {
 });
 console.log(r.status, await r.json());
 ```
+
+For an authenticated route this needs a real access token — mint one through the Supabase admin API
+(create user → sign in with password). Two throwaway users is also the only way to _prove_ the RLS
+boundary rather than assume it: user B must get a 404, not a filtered list.

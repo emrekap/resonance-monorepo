@@ -46,6 +46,13 @@ uvicorn[standard]>=0.30.0
 python-multipart>=0.0.9
 python-dotenv>=1.0.0   # load HF_TOKEN and config from .env
 
+# ── Queue worker (worker.py) ─────────────────────────────────────────────────
+# The official BullMQ Python port. It runs the *same* Lua scripts as the Node
+# library, so this consumes jobs `apps/api` (bullmq on npm) produced — that
+# interop is the whole reason the queue can straddle the polyglot split.
+# It pins redis==7.4.1 itself; don't add a second redis client.
+bullmq==3.0.3
+
 # ── Optional: text endpoint (TextToEvents) needs TTS + language detection ────
 # gtts
 # langdetect

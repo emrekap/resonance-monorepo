@@ -87,6 +87,54 @@ python main.py
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
+---
+
+## Two entry points
+
+This app runs one of two ways, over one shared implementation:
+
+| File            | What it is                              | Who drives it                                   |
+| --------------- | --------------------------------------- | ----------------------------------------------- |
+| **`main.py`**   | FastAPI — upload a file, get JSON back  | You, by hand; `example_client.py`; the HF Space |
+| **`worker.py`** | BullMQ consumer of the `analysis` queue | `apps/api`, in production                       |
+
+Both import **`engine.py`**, which owns the environment bootstrap (`.env`, PATH, whisperx pinning,
+device selection), the model load, and inference itself. Loading ~10 GB of weights twice in two
+slightly different ways is the drift that split avoids.
+
+### The worker
+
+```bash
+python worker.py
+```
+
+Needs `REDIS_URL` (see `.env.example`) and a running Redis —
+`docker compose -f ../../infra/docker/docker-compose.yml up -d`.
+
+```text
+apps/api  ──▶  [analysis]  ──▶  worker.py  ──▶  [analysis-results]  ──▶  apps/worker  ──▶  Postgres
+```
+
+It downloads the media, runs TRIBE v2, and publishes the outcome. **It never touches Postgres** —
+Prisma is the single owner of the app schema, and a second ORM here is exactly the drift the
+polyglot split exists to prevent. `apps/worker` (Bun) does the writing.
+
+Interop is not a bridge or a translation layer: the `bullmq` PyPI package is the official port and
+runs the _same Lua scripts_ as the npm one, so a job Bun adds is a job Python consumes. The payload
+shapes live in [`queue_contract.py`](queue_contract.py), mirroring
+[`packages/queue/src/contract.ts`](../../packages/queue/src/contract.ts) — **change one, change the
+other.**
+
+Why a queue rather than the HTTP endpoints above: inference is seconds-to-minutes and GPU-bound.
+Blocking a client request on it would hold an API connection for the duration and lose the work on
+any disconnect. The queue gives durability, retries with backoff, and lets the GPU box scale
+independently of the API box.
+
+Knobs (all optional, see `.env.example`): `ML_WORKER_CONCURRENCY` — default 1, because concurrency
+here is GPU memory, not I/O; `ML_WORKER_LOCK_MS` — must exceed the slowest run or the stalled-job
+checker hands the same clip to a second worker mid-inference; `ML_MAX_MEDIA_BYTES`,
+`ML_DOWNLOAD_TIMEOUT_S`.
+
 On first startup the model weights (~1 GB) are downloaded from HuggingFace to `./cache/`.
 
 ---

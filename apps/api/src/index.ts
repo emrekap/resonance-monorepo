@@ -9,4 +9,5 @@ console.log(`🚀 resonance-api listening on http://localhost:${port}`);
 export default {
   port,
   fetch: app.fetch,
-};
+  idleTimeout: 60,
+} satisfies Bun.Serve.Options<unknown, never>;

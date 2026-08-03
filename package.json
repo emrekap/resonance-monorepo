@@ -12,7 +12,9 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
-    "clean": "turbo run clean"
+    "clean": "turbo run clean",
+    "docker:local": "bun run --cwd=infra/docker docker compose up -d",
+    "docker:local:tools": "bun run --cwd=infra/docker docker compose --profile tools up -d"
   },
   "devDependencies": {
     "turbo": "^2.10.8",

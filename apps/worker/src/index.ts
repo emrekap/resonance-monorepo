@@ -1,0 +1,64 @@
+import { Worker } from 'bullmq';
+import { prismaService } from '@repo/db';
+import { ANALYSIS_RESULTS_QUEUE, QUEUE_PREFIX, createRedisConnection, redisUrl } from '@repo/queue';
+import { handleResult } from './results';
+
+/**
+ * `@repo/worker` — the queue consumer that persists ML output.
+ *
+ * Deliberately its own process: it connects as `app_service` (BYPASSRLS), the
+ * credential `apps/api` must never hold. It also scales on a different axis —
+ * the API scales with request volume, this scales with GPU throughput, which is
+ * a fraction of it.
+ */
+
+const connection = createRedisConnection();
+
+const worker = new Worker(ANALYSIS_RESULTS_QUEUE, handleResult, {
+  connection,
+  prefix: QUEUE_PREFIX,
+  // These jobs are short database writes, not GPU work, so a few in flight is
+  // free. Every handler is idempotent and order-independent, which is what
+  // makes >1 safe here.
+  concurrency: 8,
+  // A row that will not write is worth retrying a few times — Postgres
+  // restarts, the pooler drops a connection — but not forever.
+  removeOnComplete: { age: 3_600, count: 1_000 },
+  removeOnFail: { age: 7 * 24 * 3_600 },
+});
+
+worker.on('failed', (job, error) => {
+  console.error(`[results] ${job?.name ?? 'job'} ${job?.id ?? '?'} failed:`, error.message);
+});
+
+worker.on('error', (error) => {
+  // Connection-level problems. BullMQ reconnects on its own; log so a Redis
+  // that is down does not look like a queue that is merely idle.
+  console.error('[results] worker error:', error);
+});
+
+console.log(
+  `👷 resonance-worker consuming "${QUEUE_PREFIX}:${ANALYSIS_RESULTS_QUEUE}" on ${redisUrl()}`,
+);
+
+/**
+ * Drain before exiting. `worker.close()` waits for in-flight handlers to finish
+ * so a deploy cannot tear down a process midway through the transaction that
+ * marks an analysis SUCCEEDED — the job would go back to the queue and be
+ * retried, but the log would show a stall nobody could explain.
+ */
+async function shutdown(signal: NodeJS.Signals): Promise<void> {
+  console.log(`\n[results] ${signal} — draining…`);
+  try {
+    await worker.close();
+    await prismaService.$disconnect();
+    await connection.quit();
+  } catch (error) {
+    console.error('[results] unclean shutdown:', error);
+    process.exitCode = 1;
+  }
+  process.exit();
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

@@ -16,14 +16,39 @@ Two workloads with opposite shapes → two runtimes with a clean boundary:
 - **Python ML layer** (`apps/ml`) — few heavy, long, GPU-bound inference jobs (TRIBE:
   video → whisperx → torch). Runs as a queue worker. Scales on GPU, independently.
 - **Between them: a Redis/BullMQ queue** — inference is seconds→minutes, so never block a client
-  request. Client → api enqueues → ml worker consumes → writes result → client polls.
+  request.
+
+### The analysis path — two queues, three processes
+
+```text
+apps/api  ──add──▶  [analysis]          ──▶  apps/ml   worker.py  (GPU)
+                                               │
+apps/worker  ◀────  [analysis-results]  ◀──────┘
+     │ prismaService (BYPASSRLS)
+     ▼
+analyses · analysis_results · inference_runs        client polls GET /analyze/:jobId
+```
+
+Two queues rather than one, because of two rules that are load-bearing:
+
+- **`apps/ml` never writes app tables.** Prisma is the single schema owner; a second ORM in Python
+  is the drift this split exists to prevent. So the Python worker _reports_, and `apps/worker`
+  persists.
+- **`apps/api` never holds BYPASSRLS.** Writing an ML result crosses the tenant boundary and cannot
+  go through `withUser()`/RLS, so it needs `app_service` — a credential with no business in a
+  process that serves HTTP. That is why `apps/worker` is a separate process, not a second entrypoint
+  in `apps/api`.
+
+Interop is free, not bridged: the `bullmq` PyPI package is the official port and runs the **same Lua
+scripts** as the npm one. Payload contract lives in `packages/queue/src/contract.ts`, mirrored by
+hand in `apps/ml/queue_contract.py` — **change one, change the other.**
 
 ## Layout
 
 ```
-apps/    mobile (Expo RN) · web (Next.js, later) · api (Bun+Hono BFF) · ml (Python FastAPI)
-packages/ db (Prisma) · api-contract (Hono RPC client) · tsconfig (@repo/tsconfig) · ml-client (TS client from ML OpenAPI)
-infra/   docker · queue · deploy
+apps/    mobile (Expo RN) · web (Next.js, later) · api (Bun+Hono BFF) · ml (Python FastAPI + BullMQ worker) · worker (Bun, results → Postgres)
+packages/ db (Prisma) · queue (BullMQ contract) · api-contract (Hono RPC client) · tsconfig (@repo/tsconfig) · ml-client (TS client from ML OpenAPI)
+infra/   docker (local Redis + bull-board) · deploy
 ```
 
 ## Code discovery — query the index FIRST
@@ -71,6 +96,10 @@ ref. If the graph and a `Read` ever disagree, the file wins.
 - **`@hono/zod-openapi`** for routes (planned) → Zod validation + typed client + an OpenAPI spec,
   needed for the future brand/agency public API AND to generate `@repo/ml-client`.
 - **Clients** (Expo + Next) both consume `@repo/api-contract` + TanStack Query.
+- **BullMQ over Redis** for the api↔ml boundary, `@repo/queue` as the shared contract. Chosen over a
+  bespoke Redis list or an HTTP call because retries/backoff, at-least-once delivery and a
+  dashboard come for free — and because its Python port is protocol-identical, so the polyglot
+  split costs no bridge service.
 
 ## Typesafety model — IMPORTANT RULES
 
@@ -92,12 +121,18 @@ bun install                 # install + link workspaces
 turbo run build             # emit apps/api AppType d.ts
 turbo run typecheck         # typecheck all (builds first via ^build)
 turbo run dev               # run dev tasks
-cd apps/api && bun run dev  # API → http://localhost:3000/health
 bun run format              # prettier
+
+# the analysis path, end to end — needs all four
+bun run docker:local                 # Redis (`docker:local:tools` adds bull-board :3010)
+cd apps/api    && bun run dev        # API → http://localhost:3000/health
+cd apps/worker && bun run dev        # results → Postgres
+cd apps/ml     && python worker.py   # GPU consumer
 ```
 
 `apps/ml` is a **Python island** (no `package.json`, so Bun/Turbo ignore it by design) — run it via
-`apps/ml/README.md` (venv + uvicorn) or its Docker/`manage_space.py`.
+`apps/ml/README.md` (venv + `python worker.py`, or uvicorn for the FastAPI face) or its
+Docker/`manage_space.py`.
 
 ## tsconfig (`@repo/tsconfig`)
 
@@ -108,25 +143,40 @@ RN options win). All are type-check only (`noEmit`); the one exception is `apps/
 
 ## Current state
 
-**Done:** root workspace (Bun + Turbo), `@repo/tsconfig`, `apps/api` (`/health`, `/analyze` with Zod
+**Done:** root workspace (Bun + Turbo), `@repo/tsconfig`, `apps/api` (`/health` and `/analyze`, Zod
+validated, with the `AppType` d.ts), `packages/api-contract` (RPC client), `apps/ml` (Python copied from
+`../tribev2-api`), `packages/db` (Prisma 7 schema + migrations on Supabase Postgres, 23 tables, RLS
+enforced and verified — see [`packages/db/README.md`](packages/db/README.md)), `apps/api` wired to
+`@repo/db`: Supabase JWT (ES256/JWKS) middleware → `c.var.db` = `withUser` bound to the caller,
+`/analyze` persisted in `analyses` + `media_assets` (see
+[`apps/api/README.md`](apps/api/README.md)).
 
-- `AppType` d.ts), `packages/api-contract` (RPC client), `apps/ml` (Python service copied from
-  `../tribev2-api`), `packages/db` (Prisma 7 schema + migrations on Supabase Postgres, 23 tables,
-  RLS enforced and verified — see [`packages/db/README.md`](packages/db/README.md)), `apps/api`
-  wired to `@repo/db`: Supabase JWT (ES256/JWKS) middleware → `c.var.db` = `withUser` bound to the
-  caller, `/analyze` persisted in `analyses` + `media_assets` (see
-  [`apps/api/README.md`](apps/api/README.md)).
-  **TODO:** Redis/BullMQ queue in api (`POST /analyze` records the job but nothing consumes it yet);
-  Supabase Storage signed-upload flow so `media_assets` holds real objects instead of the
-  `external` bucket placeholder; refactor `apps/ml` to a queue worker; generate `@repo/ml-client`
-  from the ml OpenAPI; scaffold `apps/mobile` + `apps/web`.
+**Queue (done):** `@repo/queue` contract, `POST /analyze` enqueues, `apps/ml/worker.py` consumes and
+runs TRIBE (sharing `engine.py` with the FastAPI face), `apps/worker` persists results, and a local
+Redis plus bull-board in `infra/docker/`. Cross-language delivery and payload validation were verified
+end-to-end against a real Redis; the Prisma writes in `apps/worker` are typechecked but have not run
+against a database yet.
+
+**TODO:** Supabase Storage signed-upload flow so `media_assets` holds real objects instead of the
+`external` bucket placeholder (until then `POST /analyze` 400s on a non-`external` asset); the
+Yeo-7 parcellation that fills `analysis_results` timeline bands and the calibration behind
+`resonanceScore` (both null today — see [`apps/worker/README.md`](apps/worker/README.md)); deploy
+images for `apps/worker` + the ml worker; generate `@repo/ml-client` from the ml OpenAPI; scaffold
+`apps/mobile` + `apps/web`.
 
 ## Conventions
 
 - Package scope `@repo/*`, `private`, `type: module`.
 - **Looking for code?** Query the codebase index first (see _Code discovery_ above) — then `Read`.
-- **Adding/editing an API route?** Use the `add-api-route` skill (`.claude/skills/`).
+- **Adding/editing an API route?** Use the `add-api-route` skill (`.claude/skills/`). A directory per
+  domain, a file per route: each route file exports its own method-chained `Hono`, and the domain's
+  `index.ts` composes them with `.route()`. Schema, validation and Prisma calls live in the route's
+  own file; `src/lib/*` holds only what a second route needs. Responses must not carry `@repo/db`
+  types — map enums through `src/lib/wire.ts`.
 - **Adding a package or app?** Use the `add-package` skill (`.claude/skills/`).
+- **Touching the queue?** Payload shapes live in `packages/queue/src/contract.ts` and are mirrored by
+  hand in `apps/ml/queue_contract.py` — change both. Prefer `.nullish()` over `.optional()` in the
+  zod schemas: Pydantic serialises an unset field as `null`, which `.optional()` rejects.
 - **Adding/changing a DB model?** Use the `add-db-model` skill (`.claude/skills/`) — snake_case
   `@@map`/`@map`, `<name>_enum` for enum types, and every new table needs RLS enabled + forced with
   a policy rooted at `workspace_id` or `profile_id`.
