@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tabs } from 'expo-router';
 
-import { useTheme } from '@/hooks/use-theme';
+import { useTheme } from '@/design';
 
 /**
  * The signed-in shell. The root layout's `Stack.Protected` guard is the only
@@ -14,8 +14,8 @@ export default function AppLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: theme.accent,
-        tabBarInactiveTintColor: theme.textSecondary,
+        tabBarActiveTintColor: theme.colors.accent,
+        tabBarInactiveTintColor: theme.colors.textSecondary,
       }}
     >
       <Tabs.Screen
