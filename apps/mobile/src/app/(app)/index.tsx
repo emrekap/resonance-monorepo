@@ -20,7 +20,7 @@ export default function HomeScreen() {
   const busy = analysis.phase !== 'idle';
 
   return (
-    <Screen>
+    <Screen scroll>
       <View style={{ gap: theme.space.sm }}>
         <Text variant="title">Hi, {displayName}</Text>
         <Text variant="body" tone="secondary">
@@ -94,7 +94,7 @@ export default function HomeScreen() {
         </Link>
       </Card>
 
-      <View style={[styles.signOut, { gap: theme.space.sm }]}>
+      <View style={styles.signOut}>
         <Link href="/settings" asChild>
           <Button label="Settings" variant="ghost" size="sm" icon="settings-outline" />
         </Link>

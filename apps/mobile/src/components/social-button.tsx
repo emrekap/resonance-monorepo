@@ -30,18 +30,20 @@ export function SocialButton({
       accessibilityRole="button"
       accessibilityLabel={label}
       onPress={blocked ? undefined : onPress}
-      style={({ pressed }) => [
-        styles.button,
-        {
-          backgroundColor: pressed ? theme.colors.surfaceElevated : theme.colors.surface,
-          borderColor: theme.colors.border,
-          borderRadius: theme.radius.lg,
-          gap: theme.space.base,
-          paddingVertical: theme.space.base,
-          paddingHorizontal: theme.space.base,
-          opacity: comingSoon ? 0.5 : 1,
-        },
-      ]}
+      style={({ pressed }) =>
+        StyleSheet.flatten([
+          styles.button,
+          {
+            backgroundColor: pressed ? theme.colors.surfaceElevated : theme.colors.surface,
+            borderColor: theme.colors.border,
+            borderRadius: theme.radius.lg,
+            gap: theme.space.base,
+            paddingVertical: theme.space.base,
+            paddingHorizontal: theme.space.base,
+            opacity: comingSoon ? 0.5 : 1,
+          },
+        ])
+      }
     >
       <View
         style={[

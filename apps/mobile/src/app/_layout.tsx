@@ -10,7 +10,6 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { useEffect, useMemo } from 'react';
-
 import { ThemeProvider, useTheme, useThemePreference } from '@/design';
 import { createSessionFromUrl } from '@/lib/auth';
 import { SessionProvider, useSession } from '@/providers/session-provider';
@@ -29,7 +28,7 @@ function RootNavigator() {
   // URLs without a `?code=` — like the connect-account returns — resolve to
   // null inside, and a code the in-flow handler already exchanged just throws
   // into this catch.
-  const url = Linking.useURL();
+  const url = Linking.useLinkingURL();
   useEffect(() => {
     if (url) createSessionFromUrl(url).catch(() => {});
   }, [url]);

@@ -112,100 +112,91 @@ export default function AccountsScreen() {
     // props are `ViewProps`, not `ScrollViewProps`). So `Screen` here is just
     // the flex/canvas/safe-area shell, and the gutter + gap it would normally
     // apply are re-created on our own `ScrollView` below.
-    <Screen padded={false}>
-      <ScrollView
-        contentContainerStyle={{
-          paddingHorizontal: theme.space.lg,
-          paddingVertical: theme.space.lg,
-          gap: theme.space.xl,
-        }}
-        refreshControl={
-          <RefreshControl
-            refreshing={accounts.isRefetching}
-            onRefresh={() => void accounts.refetch()}
-            tintColor={theme.colors.textSecondary}
+    <Screen
+      scroll
+      refreshControl={
+        <RefreshControl
+          refreshing={accounts.isRefetching}
+          onRefresh={() => void accounts.refetch()}
+          tintColor={theme.colors.textSecondary}
+        />
+      }
+    >
+      <View style={{ gap: theme.space.sm }}>
+        <Text variant="labelStrong" tone="secondary">
+          CONNECTED
+        </Text>
+        {accounts.isPending ? (
+          <ActivityIndicator
+            style={[styles.loader, { margin: theme.space.sm }]}
+            color={theme.colors.textSecondary}
           />
-        }
-      >
-        <View style={{ gap: theme.space.sm }}>
-          <Text variant="labelStrong" tone="secondary">
-            CONNECTED
+        ) : accounts.isError ? (
+          <Text variant="label" tone="danger">
+            Could not load your accounts. Pull to retry or check the API is running.
           </Text>
-          {accounts.isPending ? (
-            <ActivityIndicator
-              style={[styles.loader, { margin: theme.space.sm }]}
-              color={theme.colors.textSecondary}
-            />
-          ) : accounts.isError ? (
-            <Text variant="label" tone="danger">
-              Could not load your accounts. Pull to retry or check the API is running.
-            </Text>
-          ) : accounts.data.length === 0 ? (
-            <Text variant="label" tone="secondary">
-              Nothing connected yet. Connect a channel below — you can add several accounts per
-              platform.
-            </Text>
-          ) : (
-            accounts.data.map((account) => (
-              <View
-                key={account.id}
-                style={[
-                  styles.accountRow,
-                  {
-                    backgroundColor: theme.colors.surface,
-                    borderRadius: theme.radius.lg,
-                    padding: theme.space.base,
-                    gap: theme.space.base,
-                  },
-                ]}
-              >
-                <View style={[styles.accountText, { gap: theme.space.xxs }]}>
-                  <Text variant="body">{account.handle ?? PLATFORM_LABELS[account.platform]}</Text>
-                  <Text variant="label" tone="secondary">
-                    {PLATFORM_LABELS[account.platform]} ·{' '}
-                    <Text variant="label" style={{ color: statusColor[account.status] }}>
-                      {account.status.toLowerCase()}
-                    </Text>
-                  </Text>
-                </View>
-                <Button
-                  label="Disconnect"
-                  variant="danger"
-                  size="sm"
-                  busy={disconnect.isPending && disconnect.variables === account.id}
-                  disabled={disconnect.isPending}
-                  onPress={() =>
-                    confirmDisconnect(
-                      account.id,
-                      account.handle ?? PLATFORM_LABELS[account.platform],
-                    )
-                  }
-                />
-              </View>
-            ))
-          )}
-        </View>
-
-        <View style={{ gap: theme.space.sm }}>
-          <Text variant="labelStrong" tone="secondary">
-            ADD AN ACCOUNT
-          </Text>
-          {CONNECTABLE_PLATFORMS.map((platform) => (
-            <SocialButton
-              key={platform.param}
-              label={`Connect ${platform.label}`}
-              glyph={platform.glyph}
-              comingSoon={!platform.available}
-              busy={connect.isPending && connect.variables?.param === platform.param}
-              disabled={connect.isPending}
-              onPress={() => connect.mutate(platform)}
-            />
-          ))}
+        ) : accounts.data.length === 0 ? (
           <Text variant="label" tone="secondary">
-            Connecting grants read-only access to analytics. You can disconnect at any time.
+            Nothing connected yet. Connect a channel below — you can add several accounts per
+            platform.
           </Text>
-        </View>
-      </ScrollView>
+        ) : (
+          accounts.data.map((account) => (
+            <View
+              key={account.id}
+              style={[
+                styles.accountRow,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderRadius: theme.radius.lg,
+                  padding: theme.space.base,
+                  gap: theme.space.base,
+                },
+              ]}
+            >
+              <View style={[styles.accountText, { gap: theme.space.xxs }]}>
+                <Text variant="body">{account.handle ?? PLATFORM_LABELS[account.platform]}</Text>
+                <Text variant="label" tone="secondary">
+                  {PLATFORM_LABELS[account.platform]} ·{' '}
+                  <Text variant="label" style={{ color: statusColor[account.status] }}>
+                    {account.status.toLowerCase()}
+                  </Text>
+                </Text>
+              </View>
+              <Button
+                label="Disconnect"
+                variant="danger"
+                size="sm"
+                busy={disconnect.isPending && disconnect.variables === account.id}
+                disabled={disconnect.isPending}
+                onPress={() =>
+                  confirmDisconnect(account.id, account.handle ?? PLATFORM_LABELS[account.platform])
+                }
+              />
+            </View>
+          ))
+        )}
+      </View>
+
+      <View style={{ gap: theme.space.sm }}>
+        <Text variant="labelStrong" tone="secondary">
+          ADD AN ACCOUNT
+        </Text>
+        {CONNECTABLE_PLATFORMS.map((platform) => (
+          <SocialButton
+            key={platform.param}
+            label={`Connect ${platform.label}`}
+            glyph={platform.glyph}
+            comingSoon={!platform.available}
+            busy={connect.isPending && connect.variables?.param === platform.param}
+            disabled={connect.isPending}
+            onPress={() => connect.mutate(platform)}
+          />
+        ))}
+        <Text variant="label" tone="secondary">
+          Connecting grants read-only access to analytics. You can disconnect at any time.
+        </Text>
+      </View>
     </Screen>
   );
 }

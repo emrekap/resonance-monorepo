@@ -12,7 +12,7 @@ export default function WelcomeScreen() {
       <View style={[styles.hero, { gap: theme.space.base }]}>
         <Text variant="display">Resonance</Text>
         <Text variant="body" tone="secondary" style={styles.tagline}>
-          Know how your content will land — before you post. Brain-model predictions for video and
+          Know how your content will land before you post. Brain-model predictions for video and
           audio.
         </Text>
       </View>
@@ -21,15 +21,17 @@ export default function WelcomeScreen() {
         <Link href="/sign-up" asChild>
           <Pressable
             accessibilityRole="button"
-            style={({ pressed }) => [
-              styles.primary,
-              {
-                backgroundColor: theme.colors.accentSurface,
-                borderRadius: theme.radius.lg,
-                paddingVertical: theme.space.base,
-                opacity: pressed ? 0.85 : 1,
-              },
-            ]}
+            style={({ pressed }) =>
+              StyleSheet.flatten([
+                styles.primary,
+                {
+                  backgroundColor: theme.colors.accentSurface,
+                  borderRadius: theme.radius.lg,
+                  paddingVertical: theme.space.base,
+                  opacity: pressed ? 0.85 : 1,
+                },
+              ])
+            }
           >
             <Text variant="body" tone="onAccent">
               Get started
@@ -39,7 +41,7 @@ export default function WelcomeScreen() {
         <Link href="/sign-in" asChild>
           <Pressable
             accessibilityRole="button"
-            style={[styles.secondary, { paddingVertical: theme.space.base }]}
+            style={StyleSheet.flatten([styles.secondary, { paddingVertical: theme.space.base }])}
           >
             <Text variant="body" tone="secondary">
               I already have an account
