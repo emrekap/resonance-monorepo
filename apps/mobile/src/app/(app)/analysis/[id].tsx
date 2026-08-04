@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
-import { Button, Card, Screen, Text } from '@/components/ui';
+import { Button, Card, Score, Screen, Text } from '@/components/ui';
 import { useTheme } from '@/design';
 import { api } from '@/lib/api';
 
@@ -66,6 +66,21 @@ export default function AnalysisScreen() {
         </Card>
       ) : (
         <>
+          {job.data.status === AnalysisStatus.SUCCEEDED ? (
+            <Score
+              value={
+                job.data.result?.resonanceScore != null
+                  ? Math.round(job.data.result.resonanceScore * 100)
+                  : null
+              }
+              caption={
+                job.data.result?.percentileInChannel != null
+                  ? `Top ${100 - Math.round(job.data.result.percentileInChannel)}% for your channel`
+                  : undefined
+              }
+            />
+          ) : null}
+
           <Card>
             <View style={[styles.statusRow, { gap: theme.space.sm }]}>
               {running ? <ActivityIndicator size="small" color={theme.colors.accent} /> : null}
@@ -80,22 +95,6 @@ export default function AnalysisScreen() {
               </Text>
             ) : null}
           </Card>
-
-          {job.data.status === AnalysisStatus.SUCCEEDED ? (
-            <Card>
-              <Text variant="labelStrong">Resonance</Text>
-              <Text variant="display">
-                {job.data.result?.resonanceScore != null
-                  ? Math.round(job.data.result.resonanceScore * 100)
-                  : '—'}
-              </Text>
-              <Text variant="label" tone="secondary">
-                {job.data.result?.percentileInChannel != null
-                  ? `Top ${100 - Math.round(job.data.result.percentileInChannel)}% for your channel`
-                  : 'Score calibration is still training — raw encoding finished successfully.'}
-              </Text>
-            </Card>
-          ) : null}
 
           <Button
             label="Analyze another"
