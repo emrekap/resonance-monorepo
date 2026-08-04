@@ -65,7 +65,7 @@ four-phase pipeline:
 2. **register** — `POST /media` writes the `media_assets` row and answers with the Storage
    location (`media` bucket, `{workspace_id}/{asset_id}`);
 3. **upload** — `expo-file-system`'s `UploadTask` streams the file from disk to Supabase Storage
-   with the *user's* JWT — no base64, nothing held in JS memory, progress + cancel for free. The
+   with the _user's_ JWT — no base64, nothing held in JS memory, progress + cancel for free. The
    bucket's RLS policy (first path segment = a workspace you belong to) authorizes the write; the
    API never sees the bytes;
 4. **analyze** — `POST /analyze { mediaAssetId }` verifies the object landed (signed-URL mint

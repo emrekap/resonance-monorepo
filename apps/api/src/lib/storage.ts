@@ -49,7 +49,8 @@ export async function signedMediaUrl(path: string, accessToken: string): Promise
   });
 
   if (res.status === 400 || res.status === 404) return null;
-  if (!res.ok) throw new Error(`storage sign for ${path} failed: ${res.status} ${await res.text()}`);
+  if (!res.ok)
+    throw new Error(`storage sign for ${path} failed: ${res.status} ${await res.text()}`);
 
   const { signedURL } = (await res.json()) as { signedURL: string };
   return `${base}${signedURL}`;

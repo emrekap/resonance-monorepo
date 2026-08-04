@@ -34,39 +34,43 @@ const KIND_BY_PARAM = {
  * write, not us. The row starts PENDING; `POST /analyze` verifies the object
  * exists (by minting a signed URL under the same RLS) and flips it READY.
  */
-export const createMediaAsset = new Hono<AuthEnv>().post('/', zValidator('json', body), async (c) => {
-  const { kind, mimeType, byteSize, workspaceId: requested } = c.req.valid('json');
-  const { id: profileId } = c.get('user');
+export const createMediaAsset = new Hono<AuthEnv>().post(
+  '/',
+  zValidator('json', body),
+  async (c) => {
+    const { kind, mimeType, byteSize, workspaceId: requested } = c.req.valid('json');
+    const { id: profileId } = c.get('user');
 
-  const created = await c.var.db(async (tx) => {
-    const workspaceId = await resolveWorkspaceId(tx, profileId, requested);
-    if (!workspaceId) return null;
+    const created = await c.var.db(async (tx) => {
+      const workspaceId = await resolveWorkspaceId(tx, profileId, requested);
+      if (!workspaceId) return null;
 
-    // Minted here rather than by the column default because the storage path
-    // embeds the id, and the row should land with its final path in one insert.
-    const id = Bun.randomUUIDv7();
-    return tx.mediaAsset.create({
-      data: {
-        id,
-        workspaceId,
-        uploadedById: profileId,
-        kind: KIND_BY_PARAM[kind],
-        source: MediaSource.UPLOAD,
-        status: MediaStatus.PENDING,
-        storageBucket: MEDIA_BUCKET,
-        storagePath: `${workspaceId}/${id}`,
-        mimeType,
-        byteSize: byteSize === undefined ? undefined : BigInt(byteSize),
-      },
-      select: { id: true, storageBucket: true, storagePath: true },
+      // Minted here rather than by the column default because the storage path
+      // embeds the id, and the row should land with its final path in one insert.
+      const id = Bun.randomUUIDv7();
+      return tx.mediaAsset.create({
+        data: {
+          id,
+          workspaceId,
+          uploadedById: profileId,
+          kind: KIND_BY_PARAM[kind],
+          source: MediaSource.UPLOAD,
+          status: MediaStatus.PENDING,
+          storageBucket: MEDIA_BUCKET,
+          storagePath: `${workspaceId}/${id}`,
+          mimeType,
+          byteSize: byteSize === undefined ? undefined : BigInt(byteSize),
+        },
+        select: { id: true, storageBucket: true, storagePath: true },
+      });
     });
-  });
 
-  // 404, not 403: naming the workspace would confirm it exists to a non-member.
-  if (!created) return c.json({ error: 'workspace_not_found' as const }, 404);
+    // 404, not 403: naming the workspace would confirm it exists to a non-member.
+    if (!created) return c.json({ error: 'workspace_not_found' as const }, 404);
 
-  return c.json(
-    { mediaAssetId: created.id, bucket: created.storageBucket, path: created.storagePath },
-    201,
-  );
-});
+    return c.json(
+      { mediaAssetId: created.id, bucket: created.storageBucket, path: created.storagePath },
+      201,
+    );
+  },
+);

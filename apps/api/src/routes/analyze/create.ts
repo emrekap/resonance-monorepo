@@ -48,8 +48,7 @@ type LocatedAsset = {
 
 /** What the first transaction hands back. Both misses answer the same 404. */
 type Located =
-  | { ok: true; workspaceId: string; asset: LocatedAsset }
-  | { ok: false; reason: 'not_found' };
+  { ok: true; workspaceId: string; asset: LocatedAsset } | { ok: false; reason: 'not_found' };
 
 /**
  * `POST /analyze` — record the intent to analyse a piece of media, then queue it.
