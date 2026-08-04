@@ -10,7 +10,8 @@
     "web": "expo start --web",
     "lint": "eslint .",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "design:doc": "bun run scripts/generate-design-doc.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
