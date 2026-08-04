@@ -39,5 +39,19 @@ describe('palette contrast', () => {
       expect(ratio).toBeLessThan(4.5);
       expect(ratio).toBeGreaterThanOrEqual(3);
     });
+
+    test(`${scheme}.onAccentSubtle clears 4.5:1 on accentSubtle`, () => {
+      expect(contrastRatio(palette.onAccentSubtle, palette.accentSubtle)).toBeGreaterThanOrEqual(
+        4.5,
+      );
+    });
+
+    test(`${scheme}.success clears 4.5:1 on surface`, () => {
+      expect(contrastRatio(palette.success, palette.surface)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    test(`${scheme}.danger clears 4.5:1 on surface`, () => {
+      expect(contrastRatio(palette.danger, palette.surface)).toBeGreaterThanOrEqual(4.5);
+    });
   }
 });

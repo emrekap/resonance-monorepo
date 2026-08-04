@@ -11,6 +11,11 @@
  * does both. So `accent` is the on-canvas colour (text, bands, the bloom) and
  * `accentSurface` is the filled-button colour that `onAccent` sits on. In light
  * mode one value satisfies both, and they are deliberately identical.
+ *
+ * The same conflict recurs for `accentSubtle`: in dark mode there is no single
+ * lightness that is both distinguishable from `canvas` and dark enough for
+ * `accent` text at AA, so `onAccentSubtle` is a dedicated text token for that
+ * pairing.
  */
 export const palettes = {
   dark: {
@@ -26,7 +31,8 @@ export const palettes = {
     accentSurface: '#6D4AFF',
     accentSurfacePressed: '#5B34E0',
     accentMuted: '#6D55C4',
-    accentSubtle: '#1A1630',
+    accentSubtle: '#241E42',
+    onAccentSubtle: '#A78BFF',
     onAccent: '#FFFFFF',
     bandTrack: '#1F1E26',
     bandNeutral: '#3B3B47',
@@ -48,10 +54,11 @@ export const palettes = {
     accentSurfacePressed: '#5227D6',
     accentMuted: '#9A85E8',
     accentSubtle: '#EFEBFD',
+    onAccentSubtle: '#6338E8',
     onAccent: '#FFFFFF',
     bandTrack: '#E7E5F0',
     bandNeutral: '#C6C3D4',
-    success: '#16A34A',
+    success: '#15803D',
     warning: '#B45309',
     danger: '#DC2626',
   },

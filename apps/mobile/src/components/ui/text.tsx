@@ -3,7 +3,8 @@ import { Text as RNText, type TextProps as RNTextProps } from 'react-native';
 import { useTheme, type TypeVariant } from '@/design';
 
 /** Tones safe for body copy — every one clears WCAG AA on its canvas. */
-export type TextTone = 'default' | 'secondary' | 'accent' | 'danger' | 'success' | 'onAccent';
+export type TextTone =
+  'default' | 'secondary' | 'accent' | 'danger' | 'success' | 'onAccent' | 'onAccentSubtle';
 
 /** Variants large or incidental enough to carry the sub-AA `textMuted`. */
 type MutedSafeVariant = 'display' | 'title' | 'caption' | 'eyebrow';
@@ -25,6 +26,7 @@ export function Text({ variant = 'body', tone = 'default', style, ...rest }: Tex
     danger: theme.colors.danger,
     success: theme.colors.success,
     onAccent: theme.colors.onAccent,
+    onAccentSubtle: theme.colors.onAccentSubtle,
   }[tone];
 
   return (

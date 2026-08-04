@@ -19,11 +19,11 @@ export function Badge({ label, tone = 'accent' }: BadgeProps) {
   }[tone];
 
   const textTone = {
-    accent: 'accent',
-    neutral: 'secondary',
-    success: 'success',
-    danger: 'danger',
-  }[tone] as 'accent' | 'secondary' | 'success' | 'danger';
+    accent: 'onAccentSubtle' as const,
+    neutral: 'secondary' as const,
+    success: 'success' as const,
+    danger: 'danger' as const,
+  }[tone];
 
   return (
     <View
