@@ -2,52 +2,43 @@ import { Link } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { SocialAuthPanel } from '@/components/social-auth-panel';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Screen, Text } from '@/components/ui';
+import { useTheme } from '@/design';
 
 export default function SignUpScreen() {
+  const theme = useTheme();
+
   return (
-    <ThemedView style={styles.root}>
-      <View style={styles.copy}>
-        <ThemedText type="subtitle">Create your account</ThemedText>
-        <ThemedText type="default" themeColor="textSecondary">
+    <Screen>
+      <View style={{ gap: theme.space.sm, marginTop: theme.space.base }}>
+        <Text variant="title">Create your account</Text>
+        <Text variant="body" tone="secondary">
           Your workspace is created automatically — connect your channels once you&apos;re in.
-        </ThemedText>
+        </Text>
       </View>
 
       <SocialAuthPanel />
 
-      <View style={styles.footer}>
-        <ThemedText type="small" themeColor="textSecondary" style={styles.legal}>
+      <View style={[styles.footer, { gap: theme.space.base }]}>
+        <Text variant="label" tone="secondary" style={styles.legal}>
           By continuing you agree to the Terms of Service and Privacy Policy.
-        </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
+        </Text>
+        <Text variant="label" tone="secondary">
           Already have an account?{' '}
           <Link href="/sign-in" replace>
-            <ThemedText type="smallBold" themeColor="accent">
+            <Text variant="labelStrong" tone="accent">
               Sign in
-            </ThemedText>
+            </Text>
           </Link>
-        </ThemedText>
+        </Text>
       </View>
-    </ThemedView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    padding: Spacing.four,
-    gap: Spacing.five,
-  },
-  copy: {
-    gap: Spacing.two,
-    marginTop: Spacing.three,
-  },
   footer: {
     alignItems: 'center',
-    gap: Spacing.three,
   },
   legal: {
     textAlign: 'center',

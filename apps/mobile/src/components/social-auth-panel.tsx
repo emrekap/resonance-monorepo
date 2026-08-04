@@ -3,8 +3,8 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { SocialButton } from '@/components/social-button';
-import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Text } from '@/components/ui';
+import { useTheme } from '@/design';
 import { signInWithProvider } from '@/lib/auth';
 import { LOGIN_PROVIDERS } from '@/lib/social';
 
@@ -16,6 +16,7 @@ import { LOGIN_PROVIDERS } from '@/lib/social';
  * layout's `Stack.Protected` guard flips, and the router swaps stacks.
  */
 export function SocialAuthPanel() {
+  const theme = useTheme();
   const [busyProvider, setBusyProvider] = useState<Provider | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,7 +34,7 @@ export function SocialAuthPanel() {
   };
 
   return (
-    <View style={styles.stack}>
+    <View style={{ gap: theme.space.sm }}>
       {LOGIN_PROVIDERS.map((entry) => (
         <SocialButton
           key={entry.provider}
@@ -46,20 +47,16 @@ export function SocialAuthPanel() {
         />
       ))}
       {error ? (
-        <ThemedText type="small" themeColor="danger" style={styles.error}>
+        <Text variant="label" tone="danger" style={[styles.error, { marginTop: theme.space.sm }]}>
           {error}
-        </ThemedText>
+        </Text>
       ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  stack: {
-    gap: Spacing.two,
-  },
   error: {
     textAlign: 'center',
-    marginTop: Spacing.two,
   },
 });

@@ -2,46 +2,38 @@ import { Link } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { SocialAuthPanel } from '@/components/social-auth-panel';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Screen, Text } from '@/components/ui';
+import { useTheme } from '@/design';
 
 export default function SignInScreen() {
+  const theme = useTheme();
+
   return (
-    <ThemedView style={styles.root}>
-      <View style={styles.copy}>
-        <ThemedText type="subtitle">Welcome back</ThemedText>
-        <ThemedText type="default" themeColor="textSecondary">
+    <Screen>
+      <View style={{ gap: theme.space.sm, marginTop: theme.space.base }}>
+        <Text variant="title">Welcome back</Text>
+        <Text variant="body" tone="secondary">
           Sign in with the account you used before.
-        </ThemedText>
+        </Text>
       </View>
 
       <SocialAuthPanel />
 
       <View style={styles.footer}>
-        <ThemedText type="small" themeColor="textSecondary">
+        <Text variant="label" tone="secondary">
           New to Resonance?{' '}
           <Link href="/sign-up" replace>
-            <ThemedText type="smallBold" themeColor="accent">
+            <Text variant="labelStrong" tone="accent">
               Create an account
-            </ThemedText>
+            </Text>
           </Link>
-        </ThemedText>
+        </Text>
       </View>
-    </ThemedView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    padding: Spacing.four,
-    gap: Spacing.five,
-  },
-  copy: {
-    gap: Spacing.two,
-    marginTop: Spacing.three,
-  },
   footer: {
     alignItems: 'center',
   },

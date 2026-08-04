@@ -13,12 +13,9 @@ import {
   View,
 } from 'react-native';
 
-import { Button } from '@/components/button';
 import { SocialButton } from '@/components/social-button';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { Button, Screen, Text } from '@/components/ui';
+import { useTheme } from '@/design';
 import { api } from '@/lib/api';
 import {
   CONNECTABLE_PLATFORMS,
@@ -103,55 +100,73 @@ export default function AccountsScreen() {
   };
 
   const statusColor: Record<ConnectionStatus, string> = {
-    [ConnectionStatus.ACTIVE]: theme.success,
-    [ConnectionStatus.EXPIRED]: theme.warning,
-    [ConnectionStatus.REVOKED]: theme.danger,
-    [ConnectionStatus.DISCONNECTED]: theme.textSecondary,
+    [ConnectionStatus.ACTIVE]: theme.colors.success,
+    [ConnectionStatus.EXPIRED]: theme.colors.warning,
+    [ConnectionStatus.REVOKED]: theme.colors.danger,
+    [ConnectionStatus.DISCONNECTED]: theme.colors.textSecondary,
   };
 
   return (
-    <ThemedView style={styles.root}>
+    // `padded={false}`: this screen needs `RefreshControl`, which only exists
+    // on a `ScrollView` — `Screen`'s own `scroll` mode doesn't forward it (its
+    // props are `ViewProps`, not `ScrollViewProps`). So `Screen` here is just
+    // the flex/canvas/safe-area shell, and the gutter + gap it would normally
+    // apply are re-created on our own `ScrollView` below.
+    <Screen padded={false}>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={{
+          paddingHorizontal: theme.space.lg,
+          paddingVertical: theme.space.lg,
+          gap: theme.space.xl,
+        }}
         refreshControl={
           <RefreshControl
             refreshing={accounts.isRefetching}
             onRefresh={() => void accounts.refetch()}
-            tintColor={theme.textSecondary}
+            tintColor={theme.colors.textSecondary}
           />
         }
       >
-        <View style={styles.section}>
-          <ThemedText type="smallBold" themeColor="textSecondary">
+        <View style={{ gap: theme.space.sm }}>
+          <Text variant="labelStrong" tone="secondary">
             CONNECTED
-          </ThemedText>
+          </Text>
           {accounts.isPending ? (
-            <ActivityIndicator style={styles.loader} color={theme.textSecondary} />
+            <ActivityIndicator
+              style={[styles.loader, { margin: theme.space.sm }]}
+              color={theme.colors.textSecondary}
+            />
           ) : accounts.isError ? (
-            <ThemedText type="small" themeColor="danger">
+            <Text variant="label" tone="danger">
               Could not load your accounts. Pull to retry or check the API is running.
-            </ThemedText>
+            </Text>
           ) : accounts.data.length === 0 ? (
-            <ThemedText type="small" themeColor="textSecondary">
+            <Text variant="label" tone="secondary">
               Nothing connected yet. Connect a channel below — you can add several accounts per
               platform.
-            </ThemedText>
+            </Text>
           ) : (
             accounts.data.map((account) => (
               <View
                 key={account.id}
-                style={[styles.accountRow, { backgroundColor: theme.backgroundElement }]}
+                style={[
+                  styles.accountRow,
+                  {
+                    backgroundColor: theme.colors.surface,
+                    borderRadius: theme.radius.lg,
+                    padding: theme.space.base,
+                    gap: theme.space.base,
+                  },
+                ]}
               >
-                <View style={styles.accountText}>
-                  <ThemedText type="default">
-                    {account.handle ?? PLATFORM_LABELS[account.platform]}
-                  </ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
+                <View style={[styles.accountText, { gap: theme.space.xxs }]}>
+                  <Text variant="body">{account.handle ?? PLATFORM_LABELS[account.platform]}</Text>
+                  <Text variant="label" tone="secondary">
                     {PLATFORM_LABELS[account.platform]} ·{' '}
-                    <ThemedText type="small" style={{ color: statusColor[account.status] }}>
+                    <Text variant="label" style={{ color: statusColor[account.status] }}>
                       {account.status.toLowerCase()}
-                    </ThemedText>
-                  </ThemedText>
+                    </Text>
+                  </Text>
                 </View>
                 <Button
                   label="Disconnect"
@@ -171,10 +186,10 @@ export default function AccountsScreen() {
           )}
         </View>
 
-        <View style={styles.section}>
-          <ThemedText type="smallBold" themeColor="textSecondary">
+        <View style={{ gap: theme.space.sm }}>
+          <Text variant="labelStrong" tone="secondary">
             ADD AN ACCOUNT
-          </ThemedText>
+          </Text>
           {CONNECTABLE_PLATFORMS.map((platform) => (
             <SocialButton
               key={platform.param}
@@ -186,39 +201,24 @@ export default function AccountsScreen() {
               onPress={() => connect.mutate(platform)}
             />
           ))}
-          <ThemedText type="small" themeColor="textSecondary">
+          <Text variant="label" tone="secondary">
             Connecting grants read-only access to analytics. You can disconnect at any time.
-          </ThemedText>
+          </Text>
         </View>
       </ScrollView>
-    </ThemedView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-  content: {
-    padding: Spacing.four,
-    gap: Spacing.five,
-  },
-  section: {
-    gap: Spacing.two,
-  },
   loader: {
     alignSelf: 'flex-start',
-    margin: Spacing.two,
   },
   accountRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 14,
-    padding: Spacing.three,
-    gap: Spacing.three,
   },
   accountText: {
     flex: 1,
-    gap: 2,
   },
 });

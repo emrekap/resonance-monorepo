@@ -1,16 +1,13 @@
 import { Link } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
-import { Button } from '@/components/button';
-import { Card } from '@/components/card';
-import { ProgressBar } from '@/components/progress-bar';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Button, Card, Meter, Screen, Text } from '@/components/ui';
+import { useTheme } from '@/design';
 import { PHASE_LABELS, useMediaAnalysis } from '@/hooks/use-media-analysis';
 import { useSession } from '@/providers/session-provider';
 
 export default function HomeScreen() {
+  const theme = useTheme();
   const { session, signOut } = useSession();
   const analysis = useMediaAnalysis();
 
@@ -23,29 +20,29 @@ export default function HomeScreen() {
   const busy = analysis.phase !== 'idle';
 
   return (
-    <ThemedView style={styles.root}>
-      <View style={styles.header}>
-        <ThemedText type="subtitle">Hi, {displayName}</ThemedText>
-        <ThemedText type="default" themeColor="textSecondary">
+    <Screen>
+      <View style={{ gap: theme.space.sm }}>
+        <Text variant="title">Hi, {displayName}</Text>
+        <Text variant="body" tone="secondary">
           Run an analysis to see how your next post will resonate.
-        </ThemedText>
+        </Text>
       </View>
 
       <Card>
-        <ThemedText type="smallBold">New analysis</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
+        <Text variant="labelStrong">New analysis</Text>
+        <Text variant="label" tone="secondary">
           Pick something from your library. It uploads privately to your workspace and lands on the
           model.
-        </ThemedText>
+        </Text>
 
         {busy ? (
-          <View style={styles.progress}>
-            <ThemedText type="small" themeColor="textSecondary">
+          <View style={[styles.progress, { gap: theme.space.sm, marginTop: theme.space.xs }]}>
+            <Text variant="label" tone="secondary">
               {PHASE_LABELS[analysis.phase as Exclude<typeof analysis.phase, 'idle'>]}
-            </ThemedText>
+            </Text>
             {analysis.phase === 'uploading' ? (
               <>
-                <ProgressBar progress={analysis.progress} />
+                <Meter value={analysis.progress} label="Upload progress" />
                 <Button
                   label="Cancel upload"
                   variant="danger"
@@ -56,7 +53,7 @@ export default function HomeScreen() {
             ) : null}
           </View>
         ) : (
-          <View style={styles.actions}>
+          <View style={{ gap: theme.space.sm, marginTop: theme.space.xs }}>
             <Button
               label="Video"
               icon="videocam"
@@ -81,45 +78,31 @@ export default function HomeScreen() {
         )}
 
         {analysis.error ? (
-          <ThemedText type="small" themeColor="danger">
+          <Text variant="label" tone="danger">
             {analysis.error}
-          </ThemedText>
+          </Text>
         ) : null}
       </Card>
 
       <Card>
-        <ThemedText type="smallBold">Better with your audience</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
+        <Text variant="labelStrong">Better with your audience</Text>
+        <Text variant="label" tone="secondary">
           Connect a channel so results can be ranked against your own audience.
-        </ThemedText>
+        </Text>
         <Link href="/accounts" asChild>
-          <Button label="Connect an account" variant="outline" size="sm" />
+          <Button label="Connect an account" variant="secondary" size="sm" />
         </Link>
       </Card>
 
       <View style={styles.signOut}>
         <Button label="Sign out" variant="danger" size="sm" onPress={() => void signOut()} />
       </View>
-    </ThemedView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    padding: Spacing.four,
-    gap: Spacing.four,
-  },
-  header: {
-    gap: Spacing.two,
-  },
-  actions: {
-    gap: Spacing.two,
-    marginTop: Spacing.one,
-  },
   progress: {
-    gap: Spacing.two,
-    marginTop: Spacing.one,
     alignItems: 'stretch',
   },
   signOut: {

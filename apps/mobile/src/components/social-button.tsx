@@ -1,8 +1,7 @@
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
-import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { Text } from '@/components/ui';
+import { useTheme } from '@/design';
 
 interface SocialButtonProps {
   label: string;
@@ -34,26 +33,35 @@ export function SocialButton({
       style={({ pressed }) => [
         styles.button,
         {
-          backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement,
-          borderColor: theme.border,
+          backgroundColor: pressed ? theme.colors.surfaceElevated : theme.colors.surface,
+          borderColor: theme.colors.border,
+          borderRadius: theme.radius.lg,
+          gap: theme.space.base,
+          paddingVertical: theme.space.base,
+          paddingHorizontal: theme.space.base,
           opacity: comingSoon ? 0.5 : 1,
         },
       ]}
     >
-      <View style={[styles.glyph, { backgroundColor: theme.background }]}>
+      <View
+        style={[
+          styles.glyph,
+          { backgroundColor: theme.colors.canvas, borderRadius: theme.radius.pill },
+        ]}
+      >
         {busy ? (
-          <ActivityIndicator size="small" color={theme.textSecondary} />
+          <ActivityIndicator size="small" color={theme.colors.textSecondary} />
         ) : (
-          <ThemedText type="smallBold">{glyph}</ThemedText>
+          <Text variant="labelStrong">{glyph}</Text>
         )}
       </View>
-      <ThemedText type="default" style={styles.label}>
+      <Text variant="body" style={styles.label}>
         {label}
-      </ThemedText>
+      </Text>
       {comingSoon ? (
-        <ThemedText type="small" themeColor="textSecondary">
+        <Text variant="label" tone="secondary">
           Soon
-        </ThemedText>
+        </Text>
       ) : null}
     </Pressable>
   );
@@ -63,16 +71,11 @@ const styles = StyleSheet.create({
   button: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.three,
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
   },
   glyph: {
     width: 28,
     height: 28,
-    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
