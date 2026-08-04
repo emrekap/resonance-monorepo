@@ -94,7 +94,7 @@ export default function HomeScreen() {
         </Link>
       </Card>
 
-      <View style={styles.signOut}>
+      <View style={[styles.signOut, { gap: theme.space.sm }]}>
         <Link href="/settings" asChild>
           <Button label="Settings" variant="ghost" size="sm" icon="settings-outline" />
         </Link>

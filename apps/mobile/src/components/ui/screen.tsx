@@ -1,6 +1,5 @@
 import type { ViewProps, RefreshControlProps } from 'react-native';
 import { ScrollView, View, StyleSheet } from 'react-native';
-// import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/design';
 
@@ -25,11 +24,8 @@ export function Screen({
   ...rest
 }: ScreenProps) {
   const theme = useTheme();
-  // const insets = useSafeAreaInsets();
 
   const layout = {
-    // paddingTop: insets.top,
-    // paddingBottom: insets.bottom,
     paddingVertical: theme.space.lg,
     paddingHorizontal: padded ? theme.space.lg : 0,
     gap: theme.space.lg,

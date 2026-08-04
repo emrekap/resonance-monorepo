@@ -100,11 +100,6 @@ export default function AccountsScreen() {
   };
 
   return (
-    // `padded={false}`: this screen needs `RefreshControl`, which only exists
-    // on a `ScrollView` — `Screen`'s own `scroll` mode doesn't forward it (its
-    // props are `ViewProps`, not `ScrollViewProps`). So `Screen` here is just
-    // the flex/canvas/safe-area shell, and the gutter + gap it would normally
-    // apply are re-created on our own `ScrollView` below.
     <Screen
       scroll
       refreshControl={
