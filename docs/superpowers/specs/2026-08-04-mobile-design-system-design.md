@@ -81,29 +81,38 @@ Pure data, `as const`, no React imports.
 Token _names_ are identical across schemes; values are not, because contrast does not survive
 inversion.
 
-| Token             | Dark      | Light     | Note                                |
-| ----------------- | --------- | --------- | ----------------------------------- |
-| `canvas`          | `#0A0A0C` | `#F6F5FA` | both violet-tinted, never pure grey |
-| `surface`         | `#16161A` | `#FFFFFF` | cards                               |
-| `surfaceElevated` | `#1E1D24` | `#FFFFFF` | sheets, menus                       |
-| `border`          | `#26252E` | `#E7E5F0` | hairlines                           |
-| `borderStrong`    | `#35343E` | `#D5D2E2` | focus, dividers                     |
-| `text`            | `#FFFFFF` | `#12111A` |                                     |
-| `textSecondary`   | `#A3A0B0` | `#6B6880` | 7.7:1 / 4.9:1 — both AA             |
-| `textMuted`       | `#6E6B7D` | `#8A87A0` | **3.2:1 in light — see below**      |
-| `accent`          | `#7C5CFF` | `#6338E8` | 4.6:1 / 6.4:1                       |
-| `accentPressed`   | `#6D4AFF` | `#5227D6` |                                     |
-| `accentMuted`     | `#6D55C4` | `#9A85E8` | second-rank band                    |
-| `accentSubtle`    | `#1A1630` | `#EFEBFD` | pill / chip backgrounds             |
-| `onAccent`        | `#FFFFFF` | `#FFFFFF` |                                     |
-| `bandTrack`       | `#1F1E26` | `#E7E5F0` | unfilled meter track                |
-| `bandNeutral`     | `#3B3B47` | `#C6C3D4` | networks that did not fire          |
-| `success`         | `#4ADE80` | `#16A34A` |                                     |
-| `warning`         | `#FBBF24` | `#B45309` |                                     |
-| `danger`          | `#FF6369` | `#DC2626` |                                     |
+| Token                  | Dark      | Light     | Note                                |
+| ---------------------- | --------- | --------- | ----------------------------------- |
+| `canvas`               | `#0A0A0C` | `#F6F5FA` | both violet-tinted, never pure grey |
+| `surface`              | `#16161A` | `#FFFFFF` | cards                               |
+| `surfaceElevated`      | `#1E1D24` | `#FFFFFF` | sheets, menus                       |
+| `border`               | `#26252E` | `#E7E5F0` | hairlines                           |
+| `borderStrong`         | `#35343E` | `#D5D2E2` | focus, dividers                     |
+| `text`                 | `#FFFFFF` | `#12111A` |                                     |
+| `textSecondary`        | `#A3A0B0` | `#6B6880` | 7.7:1 / 4.9:1 — both AA             |
+| `textMuted`            | `#6E6B7D` | `#8A87A0` | **3.2:1 in light — see below**      |
+| `accent`               | `#7C5CFF` | `#6338E8` | 4.6:1 / 6.4:1                       |
+| `accentSurface`        | `#6D4AFF` | `#6338E8` | filled buttons — carries `onAccent` |
+| `accentSurfacePressed` | `#5B34E0` | `#5227D6` | pressed state                       |
+| `accentMuted`          | `#6D55C4` | `#9A85E8` | second-rank band                    |
+| `accentSubtle`         | `#1A1630` | `#EFEBFD` | pill / chip backgrounds             |
+| `onAccent`             | `#FFFFFF` | `#FFFFFF` |                                     |
+| `bandTrack`            | `#1F1E26` | `#E7E5F0` | unfilled meter track                |
+| `bandNeutral`          | `#3B3B47` | `#C6C3D4` | networks that did not fire          |
+| `success`              | `#4ADE80` | `#16A34A` |                                     |
+| `warning`              | `#FBBF24` | `#B45309` |                                     |
+| `danger`               | `#FF6369` | `#DC2626` |                                     |
 
-`textMuted` measures 3.2:1 on the light canvas and therefore does **not** meet WCAG AA for body
-text. This is deliberate and documented rather than silently shipped: three text ranks that all
+**Why `accent` and `accentSurface` are two tokens.** They cannot be one. On the `#0A0A0C` canvas,
+clearing 4.5:1 against the canvas needs a luminance of at least 0.1889, while carrying white text
+at 4.5:1 needs at most 0.1833 — no violet satisfies both. So `accent` is the on-canvas colour
+(text, bands, the bloom) at 4.55:1, and `accentSurface` is the filled-button colour that `onAccent`
+sits on at 5.16:1, itself clearing the 3:1 UI-component floor against the canvas at 3.84:1. In
+light mode a single value satisfies both constraints, and the two tokens are deliberately equal.
+All figures verified by computation, and asserted by the contrast test.
+
+`textMuted` measures 3.2:1 on the light canvas (3.8:1 on dark) and therefore does **not** meet
+WCAG AA for body text. This is deliberate and documented rather than silently shipped: three text ranks that all
 clear AA on a light canvas is not achievable without the third going nearly as dark as the second.
 `textMuted` is for large text, disabled states, and decorative labels only. The primitives do not
 offer it as a body-text tone, and the contrast test (below) exempts it explicitly.
