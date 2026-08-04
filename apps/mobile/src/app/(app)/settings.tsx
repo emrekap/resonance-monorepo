@@ -20,14 +20,18 @@ export default function SettingsScreen() {
         <Text variant="eyebrow" tone="secondary">
           Appearance
         </Text>
-        <View style={{ gap: 8 }}>
+        <View style={{ gap: 8 }} accessibilityRole="radiogroup">
           {OPTIONS.map((option) => (
             <Button
               key={option.value}
               label={option.label}
               variant={preference === option.value ? 'primary' : 'secondary'}
               fullWidth
-              accessibilityState={{ selected: preference === option.value }}
+              accessibilityRole="radio"
+              accessibilityState={{
+                selected: preference === option.value,
+                checked: preference === option.value,
+              }}
               onPress={() => setPreference(option.value)}
             />
           ))}
