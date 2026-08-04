@@ -1,0 +1,33 @@
+{
+  "name": "@repo/eslint-config",
+  "version": "0.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    ".": "./base.js",
+    "./bun": "./bun.js",
+    "./react-native": "./react-native.js"
+  },
+  "files": [
+    "base.js",
+    "bun.js",
+    "react-native.js"
+  ],
+  "scripts": {
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint-config-expo": "^57.0.1",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.9.0",
+    "typescript-eslint": "^8.66.0"
+  },
+  "peerDependencies": {
+    "eslint": "^9.39.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.5"
+  }
+}

@@ -47,7 +47,7 @@ hand in `apps/ml/queue_contract.py` — **change one, change the other.**
 
 ```
 apps/    mobile (Expo RN) · web (Next.js, later) · api (Bun+Hono BFF) · ml (Python FastAPI + BullMQ worker) · worker (Bun, results → Postgres)
-packages/ db (Prisma) · queue (BullMQ contract) · api-contract (Hono RPC client) · tsconfig (@repo/tsconfig) · ml-client (TS client from ML OpenAPI)
+packages/ db (Prisma) · queue (BullMQ contract) · api-contract (Hono RPC client) · tsconfig (@repo/tsconfig) · eslint-config (@repo/eslint-config) · ml-client (TS client from ML OpenAPI)
 infra/   docker (local Redis + bull-board) · deploy
 ```
 
@@ -120,6 +120,7 @@ ref. If the graph and a `Read` ever disagree, the file wins.
 bun install                 # install + link workspaces
 turbo run build             # emit apps/api AppType d.ts
 turbo run typecheck         # typecheck all (builds first via ^build)
+turbo run lint              # eslint all (type-aware; also builds first via ^build)
 turbo run dev               # run dev tasks
 bun run format              # prettier
 
