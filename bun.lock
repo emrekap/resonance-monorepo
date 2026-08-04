@@ -67,6 +67,7 @@
         "@repo/eslint-config": "*",
         "@repo/tsconfig": "*",
         "@types/react": "~19.2.2",
+        "bun-types": "^1.3.14",
         "eslint": "^9.39.5",
         "typescript": "~6.0.3",
       },
