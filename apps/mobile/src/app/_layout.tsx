@@ -10,6 +10,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { useEffect, useMemo } from 'react';
+
 import { ThemeProvider, useTheme, useThemePreference } from '@/design';
 import { createSessionFromUrl } from '@/lib/auth';
 import { SessionProvider, useSession } from '@/providers/session-provider';

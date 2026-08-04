@@ -10,9 +10,11 @@ export default function WelcomeScreen() {
   return (
     <Screen>
       <View style={[styles.hero, { gap: theme.space.base }]}>
-        <Text variant="display">Resonance</Text>
+        <Text variant="display" numberOfLines={1} adjustsFontSizeToFit>
+          Resonance
+        </Text>
         <Text variant="body" tone="secondary" style={styles.tagline}>
-          Know how your content will land before you post. Brain-model predictions for video and
+          Know how your content will land — before you post. Brain-model predictions for video and
           audio.
         </Text>
       </View>

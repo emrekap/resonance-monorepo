@@ -16,7 +16,11 @@ src/
       index.tsx           #   Home — pick media → upload → analyze
       accounts.tsx        #   Connected accounts (list / connect / disconnect)
       analysis/[id].tsx   #   Poll GET /analyze/:id until the job settles
-  components/             # themed primitives: Button, Card, ProgressBar, social buttons
+      settings.tsx        #   Theme preference — auto / light / dark
+  design/                 # tokens, Theme type, ThemeProvider — see ../DESIGN.md
+  components/
+    ui/                   # design-system primitives: Text, Screen, Surface, Card, Button, Meter, Badge, Bloom, Score
+    social-button.tsx, social-auth-panel.tsx
   hooks/
     use-media-analysis.ts # pick → register → upload → enqueue, as one state machine
   lib/

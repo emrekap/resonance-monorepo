@@ -109,7 +109,6 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
   },
   signOut: {
-    marginTop: 'auto',
     alignItems: 'center',
   },
 });

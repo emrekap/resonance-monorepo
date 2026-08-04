@@ -173,8 +173,9 @@ migration §7, 500 MiB / `video|audio|image` caps in `media_bucket_limits`); `PO
 an asset and the app streams the file to Storage with the user's own JWT (`expo-file-system`
 `UploadTask`, progress + cancel); `POST /analyze { mediaAssetId }` mints a signed download URL by
 forwarding the caller's token (existence + authz check in one, no storage secret in the API), flips
-the asset READY, and queues the job; `(app)/analysis/[id]` polls to completion. Mobile grew reusable
-`Button`/`Card`/`ProgressBar` components. The flow is typechecked + route-smoke-tested; not yet run
+the asset READY, and queues the job; `(app)/analysis/[id]` polls to completion. Mobile now has a
+full design-system layer (`src/design/*` tokens/theme, `src/components/ui/*` primitives — see
+`apps/mobile/DESIGN.md`). The flow is typechecked + route-smoke-tested; not yet run
 end-to-end against a device + live worker.
 
 **TODO:** the Yeo-7 parcellation that fills `analysis_results` timeline bands and the calibration
