@@ -45,7 +45,9 @@ export const supabase = createClient(url, key, {
 // refresh on demand instead.
 if (Platform.OS !== 'web') {
   AppState.addEventListener('change', (state) => {
-    if (state === 'active') supabase.auth.startAutoRefresh();
-    else supabase.auth.stopAutoRefresh();
+    // Fire and forget: both resolve once the timer is (re)armed, and there is
+    // nothing to do on failure that the next `getSession()` won't handle.
+    if (state === 'active') void supabase.auth.startAutoRefresh();
+    else void supabase.auth.stopAutoRefresh();
   });
 }

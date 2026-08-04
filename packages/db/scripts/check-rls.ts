@@ -85,14 +85,18 @@ try {
     process.exit(1);
   }
 
-  const { rows } = await client.query(`
+  // `pg` types rows as `any` unless the query is given a shape. Counts come
+  // back as strings — `count(*)` is a bigint, which pg does not coerce.
+  const { rows } = await client.query<{ tables: string; policies: string }>(`
     select
       (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
         where n.nspname='public' and c.relkind='r' and c.relname <> '_prisma_migrations') as tables,
       (select count(*) from pg_policy p join pg_class c on c.oid = p.polrelid
         join pg_namespace n on n.oid = c.relnamespace where n.nspname='public') as policies
   `);
-  const { tables, policies } = rows[0];
+  const counts = rows[0];
+  if (!counts) throw new Error('RLS count query returned no rows');
+  const { tables, policies } = counts;
   console.log(`✓ RLS check passed — ${tables} tables, all enabled+forced, ${policies} policies`);
 } finally {
   await client.end();

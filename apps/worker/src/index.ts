@@ -60,5 +60,16 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   process.exit();
 }
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+// `process.on` wants a void-returning handler. Handing it an async function
+// leaves the drain unawaited and its rejections unhandled, so the promise is
+// terminated here instead — a shutdown that fails should say so and exit
+// non-zero, not vanish.
+function onSignal(signal: NodeJS.Signals): void {
+  shutdown(signal).catch((error: unknown) => {
+    console.error('[results] shutdown failed:', error);
+    process.exit(1);
+  });
+}
+
+process.on('SIGINT', onSignal);
+process.on('SIGTERM', onSignal);

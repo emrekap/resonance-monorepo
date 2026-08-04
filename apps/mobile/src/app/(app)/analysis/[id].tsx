@@ -36,7 +36,7 @@ export default function AnalysisScreen() {
     queryKey: ['analysis', id],
     enabled: Boolean(id),
     queryFn: async () => {
-      const res = await api.analyze[':id'].$get({ param: { id: id! } });
+      const res = await api.analyze[':id'].$get({ param: { id } });
       if (res.status === 404) throw new Error('This analysis does not exist.');
       if (res.status !== 200) throw new Error('Could not load the analysis.');
       return res.json();
@@ -59,7 +59,12 @@ export default function AnalysisScreen() {
             <ThemedText type="small" themeColor="danger">
               {job.error.message}
             </ThemedText>
-            <Button label="Try again" variant="secondary" size="sm" onPress={() => job.refetch()} />
+            <Button
+              label="Try again"
+              variant="secondary"
+              size="sm"
+              onPress={() => void job.refetch()}
+            />
           </Card>
         ) : (
           <>

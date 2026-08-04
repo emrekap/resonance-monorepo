@@ -23,10 +23,20 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setIsLoading(false);
-    });
+    // The catch is load-bearing: the root layout holds the splash screen until
+    // `isLoading` clears, so a rejected `getSession()` would strand the user on
+    // the splash forever. Failing to read a session is the same outcome as
+    // having none.
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        setSession(data.session);
+        setIsLoading(false);
+      })
+      .catch(() => {
+        setSession(null);
+        setIsLoading(false);
+      });
 
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next);
@@ -34,8 +44,15 @@ export function SessionProvider({ children }: PropsWithChildren) {
     return () => subscription.subscription.unsubscribe();
   }, []);
 
+  // Never rejects. A remote sign-out can fail on a flaky network, but the local
+  // session is cleared regardless and `onAuthStateChange` flips the guard — so
+  // callers get a promise they can safely fire and forget.
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (cause) {
+      console.warn('[auth] remote sign-out failed:', cause);
+    }
   };
 
   return (

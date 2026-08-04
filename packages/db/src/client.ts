@@ -29,7 +29,11 @@ function lazy(envVar: string): PrismaClient {
   return new Proxy({} as PrismaClient, {
     get(_target, property) {
       const value = Reflect.get(resolve(), property) as unknown;
-      return typeof value === 'function' ? value.bind(resolve()) : value;
+      // `Function.bind` is typed to return `any`, which would leak untyped
+      // values back through the proxy. The cast keeps the bound method typed.
+      return typeof value === 'function'
+        ? (value as (...args: unknown[]) => unknown).bind(resolve())
+        : value;
     },
   });
 }

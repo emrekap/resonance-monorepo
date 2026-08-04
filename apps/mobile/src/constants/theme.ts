@@ -36,7 +36,10 @@ export const Colors = {
   },
 } as const;
 
-export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
+export type ThemeColor = keyof typeof Colors.light;
+
+/** Compile-time proof that `dark` defines every key `light` does. Never read. */
+const _schemesAgree: Record<ThemeColor, string> = Colors.dark;
 
 export const Fonts = Platform.select({
   ios: {

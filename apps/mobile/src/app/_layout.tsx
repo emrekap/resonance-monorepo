@@ -1,7 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as Linking from 'expo-linking';
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import { Stack } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -10,7 +9,7 @@ import { useColorScheme } from 'react-native';
 import { createSessionFromUrl } from '@/lib/auth';
 import { SessionProvider, useSession } from '@/providers/session-provider';
 
-SplashScreen.preventAutoHideAsync();
+void SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
@@ -28,7 +27,7 @@ function RootNavigator() {
   }, [url]);
 
   useEffect(() => {
-    if (!isLoading) SplashScreen.hideAsync();
+    if (!isLoading) void SplashScreen.hideAsync();
   }, [isLoading]);
 
   // Keep the splash up rather than flashing onboarding at a signed-in user.

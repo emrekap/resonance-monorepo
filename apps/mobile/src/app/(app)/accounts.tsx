@@ -4,7 +4,14 @@ import * as Linking from 'expo-linking';
 import { useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect } from 'react';
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
 
 import { Button } from '@/components/button';
 import { SocialButton } from '@/components/social-button';
@@ -48,7 +55,7 @@ export default function AccountsScreen() {
   // openAuthSessionAsync below.
   const params = useLocalSearchParams<{ connected?: string; error?: string }>();
   useEffect(() => {
-    if (params.connected) queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY });
+    if (params.connected) void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY });
   }, [params.connected, queryClient]);
 
   const connect = useMutation({
@@ -109,7 +116,7 @@ export default function AccountsScreen() {
         refreshControl={
           <RefreshControl
             refreshing={accounts.isRefetching}
-            onRefresh={() => accounts.refetch()}
+            onRefresh={() => void accounts.refetch()}
             tintColor={theme.textSecondary}
           />
         }

@@ -42,7 +42,7 @@ export function SocialAuthPanel() {
           comingSoon={!entry.available}
           busy={busyProvider === entry.provider}
           disabled={busyProvider !== null}
-          onPress={() => handlePress(entry.provider)}
+          onPress={() => void handlePress(entry.provider)}
         />
       ))}
       {error ? (

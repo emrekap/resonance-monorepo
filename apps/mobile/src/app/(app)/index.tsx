@@ -34,8 +34,8 @@ export default function HomeScreen() {
       <Card>
         <ThemedText type="smallBold">New analysis</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
-          Pick something from your library. It uploads privately to your workspace and lands on
-          the model.
+          Pick something from your library. It uploads privately to your workspace and lands on the
+          model.
         </ThemedText>
 
         {busy ? (
@@ -61,21 +61,21 @@ export default function HomeScreen() {
               label="Video"
               icon="videocam"
               fullWidth
-              onPress={() => analysis.start('video')}
+              onPress={() => void analysis.start('video')}
             />
             <Button
               label="Photo"
               icon="image"
               variant="secondary"
               fullWidth
-              onPress={() => analysis.start('image')}
+              onPress={() => void analysis.start('image')}
             />
             <Button
               label="Audio"
               icon="musical-notes"
               variant="secondary"
               fullWidth
-              onPress={() => analysis.start('audio')}
+              onPress={() => void analysis.start('audio')}
             />
           </View>
         )}
@@ -98,7 +98,7 @@ export default function HomeScreen() {
       </Card>
 
       <View style={styles.signOut}>
-        <Button label="Sign out" variant="danger" size="sm" onPress={signOut} />
+        <Button label="Sign out" variant="danger" size="sm" onPress={() => void signOut()} />
       </View>
     </ThemedView>
   );

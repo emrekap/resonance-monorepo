@@ -12,7 +12,7 @@ export default function SignUpScreen() {
       <View style={styles.copy}>
         <ThemedText type="subtitle">Create your account</ThemedText>
         <ThemedText type="default" themeColor="textSecondary">
-          Your workspace is created automatically — connect your channels once you're in.
+          Your workspace is created automatically — connect your channels once you&apos;re in.
         </ThemedText>
       </View>
 
