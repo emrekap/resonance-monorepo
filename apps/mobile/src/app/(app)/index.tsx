@@ -95,6 +95,9 @@ export default function HomeScreen() {
       </Card>
 
       <View style={styles.signOut}>
+        <Link href="/settings" asChild>
+          <Button label="Settings" variant="ghost" size="sm" icon="settings-outline" />
+        </Link>
         <Button label="Sign out" variant="danger" size="sm" onPress={() => void signOut()} />
       </View>
     </Screen>

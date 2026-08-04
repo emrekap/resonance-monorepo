@@ -34,6 +34,8 @@ export default function AppLayout() {
       />
       {/* Reached by push from the analyze flow — not a tab of its own. */}
       <Tabs.Screen name="analysis/[id]" options={{ title: 'Analysis', href: null }} />
+      {/* Reached by link from home — not a tab of its own. */}
+      <Tabs.Screen name="settings" options={{ title: 'Settings', href: null }} />
     </Tabs>
   );
 }
