@@ -1,11 +1,17 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as Linking from 'expo-linking';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import {
+  DarkTheme,
+  DefaultTheme,
+  Stack,
+  ThemeProvider as NavigationThemeProvider,
+} from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
+import * as SystemUI from 'expo-system-ui';
+import { useEffect, useMemo } from 'react';
 
+import { ThemeProvider, useTheme, useThemePreference } from '@/design';
 import { createSessionFromUrl } from '@/lib/auth';
 import { SessionProvider, useSession } from '@/providers/session-provider';
 
@@ -15,6 +21,8 @@ const queryClient = new QueryClient();
 
 function RootNavigator() {
   const { session, isLoading } = useSession();
+  const { isReady: themeReady, scheme } = useThemePreference();
+  const theme = useTheme();
 
   // Fallback for OAuth redirects that arrive as a plain deep link instead of
   // through `openAuthSessionAsync` (cold starts, some Android browsers).
@@ -26,34 +34,64 @@ function RootNavigator() {
     if (url) createSessionFromUrl(url).catch(() => {});
   }, [url]);
 
-  useEffect(() => {
-    if (!isLoading) void SplashScreen.hideAsync();
-  }, [isLoading]);
+  const ready = !isLoading && themeReady;
 
-  // Keep the splash up rather than flashing onboarding at a signed-in user.
-  if (isLoading) return null;
+  useEffect(() => {
+    if (ready) void SplashScreen.hideAsync();
+  }, [ready]);
+
+  // Without this the window behind the navigator stays the platform default,
+  // which flashes white during screen transitions in dark mode.
+  useEffect(() => {
+    void SystemUI.setBackgroundColorAsync(theme.colors.canvas);
+  }, [theme.colors.canvas]);
+
+  // React Navigation owns header/card chrome, so it needs the same palette.
+  // `fonts` is required by its Theme type and has no Ultraviolet equivalent.
+  const navigationTheme = useMemo(() => {
+    const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
+    return {
+      ...base,
+      dark: scheme === 'dark',
+      colors: {
+        ...base.colors,
+        primary: theme.colors.accent,
+        background: theme.colors.canvas,
+        card: theme.colors.surface,
+        text: theme.colors.text,
+        border: theme.colors.border,
+        notification: theme.colors.danger,
+      },
+    };
+  }, [scheme, theme]);
+
+  // Keep the splash up rather than flashing onboarding at a signed-in user,
+  // or the wrong theme at anyone.
+  if (!ready) return null;
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Protected guard={session !== null}>
-        <Stack.Screen name="(app)" />
-      </Stack.Protected>
-      <Stack.Protected guard={session === null}>
-        <Stack.Screen name="(onboarding)" />
-      </Stack.Protected>
-    </Stack>
+    <NavigationThemeProvider value={navigationTheme}>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Protected guard={session !== null}>
+          <Stack.Screen name="(app)" />
+        </Stack.Protected>
+        <Stack.Protected guard={session === null}>
+          <Stack.Screen name="(onboarding)" />
+        </Stack.Protected>
+      </Stack>
+      {/* Explicit, not "auto": auto follows the OS and would be wrong the
+          moment a user overrides the theme. */}
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+    </NavigationThemeProvider>
   );
 }
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider>
       <QueryClientProvider client={queryClient}>
         <SessionProvider>
           <RootNavigator />
-          <StatusBar style="auto" />
         </SessionProvider>
       </QueryClientProvider>
     </ThemeProvider>
