@@ -13,7 +13,7 @@ suggested_storage: large
 
 A lightweight **FastAPI** service that wraps Meta's [TRIBE v2](https://huggingface.co/facebook/tribev2) model, exposing a REST endpoint to predict **fMRI brain responses** to video (and audio) files.
 
-> **What is TRIBE v2?**  
+> **What is TRIBE v2?**
 > A deep multimodal brain-encoding model from Meta that predicts how the human cortex responds to naturalistic stimuli. It combines V-JEPA2 (video), Wav2Vec-BERT (audio), and LLaMA 3.2 (text) into a unified Transformer that maps onto the fsaverage5 cortical mesh (~20 k vertices).
 
 ---
@@ -93,10 +93,10 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 This app runs one of two ways, over one shared implementation:
 
-| File            | What it is                              | Who drives it                                   |
-| --------------- | --------------------------------------- | ----------------------------------------------- |
-| **`main.py`**   | FastAPI — upload a file, get JSON back  | You, by hand; `example_client.py`; the HF Space |
-| **`worker.py`** | BullMQ consumer of the `analysis` queue | `apps/api`, in production                       |
+| File            | What it is                              | Who drives it                              |
+| --------------- | --------------------------------------- | ------------------------------------------ |
+| **`main.py`**   | FastAPI — upload a file, get JSON back  | You, by hand; `example_client.py`          |
+| **`worker.py`** | BullMQ consumer of the `analysis` queue | `apps/api`, in production and on the Space |
 
 Both import **`engine.py`**, which owns the environment bootstrap (`.env`, PATH, whisperx pinning,
 device selection), the model load, and inference itself. Loading ~10 GB of weights twice in two
@@ -137,6 +137,54 @@ checker hands the same clip to a second worker mid-inference; `ML_MAX_MEDIA_BYTE
 
 On first startup the model weights (~1 GB) are downloaded from HuggingFace to `./cache/`.
 
+### On the Hugging Face Space
+
+The Space runs **both** processes from one container ([`entrypoint.sh`](entrypoint.sh)): `worker.py`
+is the point of it, and `main.py` rides along because a Docker Space that never answers on
+`app_port` is never marked healthy. Only the worker loads TRIBE v2 — `engine.MODEL` is a per-process
+global, so a second process means a second multi-GB copy on the same card. The HTTP face therefore
+starts with `ML_HTTP_LOAD_MODEL=0`: `/` and `/health` answer (with `"inference": "queue-worker"`) and
+`/analyze/*` returns 503. Inference there goes through the queue, which is the only path
+`apps/api` uses anyway.
+
+`REDIS_URL` must be a Redis the Space can reach — a managed one (Upstash, Redis Cloud), not the
+`infra/docker` localhost default — and the same instance `apps/api` and `apps/worker` point at. It
+carries a password, so it is a Space **secret**, never a variable and never a layer in the image.
+
+#### Deploy
+
+```bash
+cd apps/ml
+python manage_space.py secrets    # 1. push HF_TOKEN + REDIS_URL from .env
+python manage_space.py deploy     # 2. upload the code — triggers a rebuild
+python manage_space.py status     # 3. wait for stage=RUNNING
+curl -H "Authorization: Bearer $HF_TOKEN" https://<you>-tribev2-api.hf.space/health
+```
+
+1. **`secrets`** — the two credentials the container has no other way to get, since `.env` is never
+   uploaded. Changing them later needs a `restart` to take effect.
+2. **`deploy`** — uploads this folder to the Space repo, which starts a build. The weights live on the
+   persistent `/data` volume (the `TRIBE_CACHE_DIR` / `HF_HOME` Space variables), so a rebuild
+   re-installs the image but does not re-download ~10 GB.
+3. **`status`** — stage, hardware, storage. A fresh boot still spends minutes loading the model onto
+   the card before the worker starts consuming.
+4. The health check should answer `"inference": "queue-worker"`, and the Space logs should carry
+   `🧠 ml worker consuming "…:analysis"` — that line, not the HTTP 200, is what says jobs from
+   `apps/api` are being picked up.
+
+Also: `restart` (pick up new secrets), `pause` (stop the GPU meter), `provision` (first-time setup).
+
+Two things the tooling cannot check for you. Upstash blocks `CONFIG GET`, so confirm in its console
+that **eviction is off** — BullMQ needs `noeviction` or it drops jobs under memory pressure. And a
+worker blocks on `BZPOPMIN` around the clock, which bills per command on a managed Redis. A running
+Space also competes for jobs with any local `python worker.py`.
+
+If either process exits, `entrypoint.sh` takes the container down with it: a Space that still serves
+`/health` while the worker is dead looks healthy while the queue silently backs up. A stop is
+forwarded as SIGTERM so `worker.py` drains the job it is holding — without that, a paused or
+restarted Space leaves the job `active` until `ML_WORKER_LOCK_MS` (30 min) expires and BullMQ's
+stalled-job checker requeues it.
+
 ---
 
 ## API endpoints
@@ -150,7 +198,7 @@ On first startup the model weights (~1 GB) are downloaded from HuggingFace to `.
 
 ### Interactive docs
 
-Open **http://localhost:8000/docs** for the Swagger UI.
+Open **<http://localhost:8000/docs>** for the Swagger UI.
 
 ---
 
@@ -237,7 +285,7 @@ For **video-only** or **audio-only** requests no token is needed.
 
 **How to create a token:**
 
-1. Go to https://huggingface.co/settings/tokens
+1. Go to <https://huggingface.co/settings/tokens>
 2. Click **New token → Read**
 3. Copy the token into `.env` as `HUGGINGFACE_TOKEN`
 4. Run `huggingface-cli login` and paste the token when prompted

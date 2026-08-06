@@ -7,8 +7,9 @@
  *   1. a table in `public` with RLS not enabled (or not forced)
  *   2. a table with RLS enabled but no policies at all — reads return nothing,
  *      which looks like a bug and gets "fixed" by disabling RLS
- *   3. `anon` / `authenticated` holding direct grants, which would expose the
- *      table through the Data API regardless of policies
+ *   3. `anon` / `authenticated` holding direct grants — table-level, or the
+ *      column-level ones `role_table_grants` does not show — which would expose
+ *      the table through the Data API regardless of policies
  *   4. app_user having acquired BYPASSRLS
  *   5. a policy predicate column that is not indexed
  */
@@ -55,6 +56,46 @@ try {
     order by 1, 2
   `);
   note('Tables reachable by anon/authenticated through the Data API', dataApiGrants.rows);
+
+  // `role_table_grants` only lists table-level grants, so a column-level one is
+  // invisible to the check above — which is the whole failure mode #3 exists to
+  // catch. `20260805140000_realtime_analyses` makes column grants real here:
+  // Supabase Realtime cannot deliver a row to a role without column privileges
+  // on it. That one exception is allowlisted; anything else fails.
+  const REALTIME_GRANT = [
+    'analyses.completed_at',
+    'analyses.created_at',
+    'analyses.id',
+    'analyses.media_asset_id',
+    'analyses.started_at',
+    'analyses.status',
+    'analyses.workspace_id',
+  ];
+  const columnGrants = await client.query<{
+    column_ref: string;
+    grantee: string;
+    privilege_type: string;
+  }>(`
+    select cp.table_name || '.' || cp.column_name as column_ref, cp.grantee, cp.privilege_type
+    from information_schema.column_privileges cp
+    where cp.table_schema = 'public'
+      and cp.grantee in ('anon', 'authenticated')
+      -- a column-level row is only news when the table itself is not granted;
+      -- otherwise the query above already reported it, once, per table
+      and not exists (
+        select 1 from information_schema.role_table_grants rtg
+        where rtg.table_schema = cp.table_schema
+          and rtg.table_name = cp.table_name
+          and rtg.grantee = cp.grantee
+      )
+    order by 1, 2
+  `);
+  note(
+    'Unexpected column-level grants to anon/authenticated',
+    columnGrants.rows.filter(
+      (r) => !(r.grantee === 'authenticated' && REALTIME_GRANT.includes(r.column_ref)),
+    ),
+  );
 
   const escalated = await client.query(`
     select rolname, rolbypassrls, rolsuper

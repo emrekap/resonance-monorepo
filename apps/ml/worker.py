@@ -65,7 +65,14 @@ CONCURRENCY = int(os.getenv("ML_WORKER_CONCURRENCY", "1"))
 # torch call does not offer.
 LOCK_DURATION_MS = int(os.getenv("ML_WORKER_LOCK_MS", str(30 * 60 * 1000)))
 
-MAX_MEDIA_BYTES = int(os.getenv("ML_MAX_MEDIA_BYTES", str(2 * 1024 * 1024 * 1024)))
+# How many times `apps/worker` may retry persisting one result. These are short
+# database writes against idempotent handlers, so the only thing a retry can be
+# recovering from is transient — and the alternative is losing a GPU run's
+# outcome to a dropped connection.
+RESULT_ATTEMPTS = int(os.getenv("ML_RESULT_ATTEMPTS", "1"))
+
+MAX_MEDIA_BYTES = int(os.getenv("ML_MAX_MEDIA_BYTES",
+                      str(2 * 1024 * 1024 * 1024)))
 DOWNLOAD_TIMEOUT_S = int(os.getenv("ML_DOWNLOAD_TIMEOUT_S", "300"))
 
 # Content types we can map back to an extension when the URL has none (a signed
@@ -111,7 +118,8 @@ def _download(url: str, directory: Path, modality: str) -> Path:
         # which is all a signed Storage URL tends to give.
         suffix = Path(unquote(urlparse(url).path)).suffix.lower()
         if suffix not in allowed:
-            content_type = (response.headers.get("content-type") or "").split(";")[0].strip()
+            content_type = (response.headers.get(
+                "content-type") or "").split(";")[0].strip()
             suffix = _SUFFIX_BY_CONTENT_TYPE.get(content_type, "")
         if suffix not in allowed:
             raise UnrecoverableError(
@@ -148,8 +156,10 @@ def _timeline(result: dict) -> Timeline:
     both survived the same filtering — truncate to the shorter rather than pair
     an activation with someone else's timestamp.
     """
-    attention = [float(value) for value in result.get("mean_activation_per_timestep", [])]
-    starts = [float(segment["start"]) for segment in result.get("segments", [])]
+    attention = [float(value) for value in result.get(
+        "mean_activation_per_timestep", [])]
+    starts = [float(segment["start"])
+              for segment in result.get("segments", [])]
 
     if len(starts) != len(attention):
         logger.warning(
@@ -195,11 +205,23 @@ class AnalysisProcessor:
         optional as `null`, and JSON has no way to say "absent". The zod schemas
         accept both, but sending the key at all is noise that reads as "the
         model reported nothing" rather than "this field does not apply yet".
+
+        `attempts` is set here rather than on the consumer because BullMQ reads
+        the retry policy off the job, and the producer is the only one who can
+        put it there. Without it every result job has exactly one attempt, so a
+        transient Postgres error — a dropped pooler connection, a lock timeout —
+        discards the outcome of a GPU run that cannot be recomputed, and the
+        analysis is stranded PROCESSING forever. The writes on the other side are
+        idempotent, so retrying costs nothing when the first attempt half-worked.
         """
         await self.results.add(
             name,
             payload.model_dump(exclude_none=True),
-            {"jobId": f"{analysis_id}:{attempt}:{name}"},
+            {
+                "jobId": f"{analysis_id}:{attempt}:{name}",
+                "attempts": RESULT_ATTEMPTS,
+                "backoff": {"type": "exponential", "delay": 1000},
+            },
         )
 
     async def __call__(self, job, token: str):
@@ -237,7 +259,8 @@ class AnalysisProcessor:
             # cleans up whatever name the download settled on.
             with tempfile.TemporaryDirectory(prefix="resonance-") as tmp_dir:
                 media_path = await asyncio.to_thread(
-                    _download, payload.media.url, Path(tmp_dir), payload.modality
+                    _download, payload.media.url, Path(
+                        tmp_dir), payload.modality
                 )
                 preds, segments = await asyncio.to_thread(
                     engine.run_inference, payload.modality, str(media_path)
@@ -245,8 +268,10 @@ class AnalysisProcessor:
                 result = engine.predictions_to_dict(preds, segments)
         except Exception as exc:
             finished_at = datetime.now(timezone.utc)
-            retryable = attempt < max_attempts and not isinstance(exc, UnrecoverableError)
-            logger.error(f"[{analysis_id}] attempt {attempt} failed: {exc}", exc_info=True)
+            retryable = attempt < max_attempts and not isinstance(
+                exc, UnrecoverableError)
+            logger.error(
+                f"[{analysis_id}] attempt {attempt} failed: {exc}", exc_info=True)
 
             await self.publish(
                 RESULT_JOB_FAILED,
@@ -301,7 +326,8 @@ class AnalysisProcessor:
 
 
 async def main() -> None:
-    logger.info(f"Loading TRIBE v2 before consuming (device: {engine.DEVICE})…")
+    logger.info(
+        f"Loading TRIBE v2 before consuming (device: {engine.DEVICE})…")
     await asyncio.to_thread(engine.load_model)
 
     results = Queue(
@@ -327,7 +353,8 @@ async def main() -> None:
     stop = asyncio.Future()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: stop.done() or stop.set_result(None))
+        loop.add_signal_handler(sig, lambda: stop.done()
+                                or stop.set_result(None))
 
     await stop
 

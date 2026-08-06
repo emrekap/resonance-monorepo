@@ -2,6 +2,7 @@ export * from './badge';
 export * from './bloom';
 export * from './button';
 export * from './card';
+export * from './chip';
 export * from './meter';
 export * from './score';
 export * from './screen';

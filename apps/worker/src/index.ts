@@ -18,11 +18,13 @@ const worker = new Worker(ANALYSIS_RESULTS_QUEUE, handleResult, {
   connection,
   prefix: QUEUE_PREFIX,
   // These jobs are short database writes, not GPU work, so a few in flight is
-  // free. Every handler is idempotent and order-independent, which is what
-  // makes >1 safe here.
+  // free. Every handler is idempotent and order-independent, and each one takes
+  // the `analyses` row lock first — which is what makes >1 safe here, since two
+  // events for the *same* analysis routinely arrive together (see
+  // `lockAnalysis` in results.ts).
   concurrency: 8,
-  // A row that will not write is worth retrying a few times — Postgres
-  // restarts, the pooler drops a connection — but not forever.
+  // Retention only. The retry policy lives on the job, so it is set by the
+  // producer — `RESULT_ATTEMPTS` in apps/ml/worker.py.
   removeOnComplete: { age: 3_600, count: 1_000 },
   removeOnFail: { age: 7 * 24 * 3_600 },
 });

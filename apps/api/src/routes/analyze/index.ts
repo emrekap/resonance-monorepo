@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { requireAuth, type AuthEnv } from '../../middleware/auth';
 import { createAnalysis } from './create';
 import { getAnalysisById } from './get';
+import { listAnalyses } from './list';
 
 /**
  * The `/analyze` domain.
@@ -18,4 +19,5 @@ import { getAnalysisById } from './get';
 export const analyze = new Hono<AuthEnv>()
   .use('*', requireAuth)
   .route('/', createAnalysis)
+  .route('/', listAnalyses)
   .route('/', getAnalysisById);

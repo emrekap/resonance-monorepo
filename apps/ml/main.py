@@ -25,10 +25,26 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger(__name__)
 
 
+# On the Hugging Face Space this process runs alongside `worker.py` (see
+# entrypoint.sh), and `engine.MODEL` is a per-process global — loading here too
+# would put a second multi-GB copy of TRIBE v2 on the same GPU. Setting
+# ML_HTTP_LOAD_MODEL=0 leaves the model to the worker; the health endpoints
+# still answer and `_analyze` already returns 503 when nothing is loaded.
+SERVES_INFERENCE = os.getenv("ML_HTTP_LOAD_MODEL", "1").strip().lower() not in (
+    "0", "false", "no", "off",
+)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load the model once when the server starts."""
-    engine.load_model()
+    """Load the model once when the server starts, unless a sibling worker owns it."""
+    if SERVES_INFERENCE:
+        engine.load_model()
+    else:
+        logger.info(
+            "ML_HTTP_LOAD_MODEL=0 — starting without the model; the queue worker "
+            "in this container owns the GPU. /analyze/* will answer 503."
+        )
     yield
     engine.unload_model()
 
@@ -118,10 +134,13 @@ async def root():
 @app.get("/health", summary="Detailed health check")
 async def health():
     return {
-        "status": "ok" if engine.is_loaded() else "model_not_loaded",
+        # Not loading the model is a healthy state when the queue worker beside
+        # us owns it — only report it as missing when we were meant to serve.
+        "status": "ok" if (engine.is_loaded() or not SERVES_INFERENCE) else "model_not_loaded",
         "model": "facebook/tribev2",
         "device": engine.DEVICE,
         "cache_dir": str(engine.CACHE_DIR.resolve()),
+        "inference": "http" if SERVES_INFERENCE else "queue-worker",
     }
 
 
@@ -131,7 +150,8 @@ async def health():
     response_class=JSONResponse,
 )
 async def analyze_video(
-    file: UploadFile = File(..., description="Video file (mp4, avi, mkv, mov, webm)"),
+    file: UploadFile = File(...,
+                            description="Video file (mp4, avi, mkv, mov, webm)"),
     include_full_predictions: bool = Query(
         False,
         description=(
@@ -156,7 +176,8 @@ async def analyze_video(
     response_class=JSONResponse,
 )
 async def analyze_audio(
-    file: UploadFile = File(..., description="Audio file (wav, mp3, flac, ogg)"),
+    file: UploadFile = File(...,
+                            description="Audio file (wav, mp3, flac, ogg)"),
     include_full_predictions: bool = Query(
         False,
         description="If true, include the full prediction matrix (can be large).",
@@ -177,7 +198,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         host=os.getenv("HOST", "0.0.0.0"),
-        port=int(os.getenv("PORT", 8000)),
+        port=int(os.getenv("PORT", 8040)),
         reload=False,
         log_level="info",
     )

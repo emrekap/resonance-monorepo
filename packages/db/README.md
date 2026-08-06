@@ -71,9 +71,14 @@ snapshots, retention curves, post labels, feature artifacts, model versions and 
 are readable by members and writable only through `app_service`. A user cannot mint themselves
 credits or fabricate their own analytics.
 
-**The Data API is closed for app tables.** Clients use supabase-js for auth and Storage uploads
-only; all table I/O goes through the Hono API. `anon` and `authenticated` hold no grants in
-`public`, so PostgREST cannot reach these tables regardless of policies.
+**The Data API is closed for app tables, with one exception.** Clients use supabase-js for auth,
+Storage uploads and Realtime; all table I/O goes through the Hono API. `anon` holds no grants in
+`public`, and `authenticated` holds exactly one: `SELECT (id, workspace_id, media_asset_id, status,
+created_at, started_at, completed_at)` on `analyses`, added in `20260805140000_realtime_analyses`.
+Supabase Realtime delivers a row only to a role holding column privileges on it — `realtime.apply_rls`
+tests `has_column_privilege` per column — so a subscription is impossible without it. PostgREST can
+therefore reach those seven columns of `analyses`, row-scoped by `analyses_select` against forced
+RLS, and nothing else anywhere.
 
 ### Verifying it
 

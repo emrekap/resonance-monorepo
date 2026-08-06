@@ -26,7 +26,7 @@ apps/api  ──add──▶  [analysis]          ──▶  apps/ml   worker.py
 apps/worker  ◀────  [analysis-results]  ◀──────┘
      │ prismaService (BYPASSRLS)
      ▼
-analyses · analysis_results · inference_runs        client polls GET /analyze/:jobId
+analyses · analysis_results · inference_runs        client reads GET /analyze/:jobId (realtime-refreshed)
 ```
 
 Two queues rather than one, because of two rules that are load-bearing:
@@ -177,6 +177,27 @@ the asset READY, and queues the job; `(app)/analysis/[id]` polls to completion. 
 full design-system layer (`src/design/*` tokens/theme, `src/components/ui/*` primitives — see
 `apps/mobile/DESIGN.md`). The flow is typechecked + route-smoke-tested; not yet run
 end-to-end against a device + live worker.
+
+**History + pagination (done, one gate):** `apps/api/src/lib/pagination.ts` is the shared list
+contract — `pageQuery(sortKeys, defaultSort)` for `limit`/`offset`/`sort`/`order`, `repeatable()` for
+`?status=A&status=B`, `paginated()` for the `{ items, page }` envelope (offset, not a cursor — see
+the README's "Lists" section for why). `GET /analyze` uses all three, filtering on status / media
+kind / created range and sorting on `createdAt` | `completedAt` | `resonanceScore`, always with an
+`{ id: 'desc' }` tiebreak. Mobile has a **History** tab (`(app)/history.tsx` + `use-analyses.ts`)
+with infinite scroll, pinned status/kind chips, and a sort menu. `media_assets.file_name` was added
+so rows have a name to show. Its migration and the realtime one below are both applied. Nothing
+here has run against a device yet.
+
+**Realtime (done, unobserved):** mobile no longer polls for analysis status. `analyses` is a member
+of the `supabase_realtime` publication, and `authenticated` holds a seven-column `SELECT` on it
+(`20260805140000_realtime_analyses`) — the one exception to "clients hold no grants in `public`",
+because `realtime.apply_rls` delivers a row only to a role with column privileges on it (`id` and
+`workspace_id` are load-bearing: without the first every event is dropped as 401, without the
+second the policy cannot resolve). Rows stay scoped by `analyses_select` against forced RLS, and
+`db:check-rls` now also fails on any column-level grant outside that allowlist.
+`use-analysis-realtime.ts` mounts one channel in the `(app)` layout and invalidates TanStack keys;
+the payload is never rendered, because a list row also needs `analysis_results` + `media_assets`.
+Typechecked, linted and unit-tested — **no event has been observed reaching a device.**
 
 **TODO:** the Yeo-7 parcellation that fills `analysis_results` timeline bands and the calibration
 behind `resonanceScore` (both null today — see [`apps/worker/README.md`](apps/worker/README.md));

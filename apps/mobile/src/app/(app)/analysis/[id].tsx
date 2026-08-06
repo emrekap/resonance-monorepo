@@ -6,6 +6,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Button, Card, Score, Screen, Text } from '@/components/ui';
 import { useTheme } from '@/design';
 import { api } from '@/lib/api';
+import { analysisKey } from '@/lib/query-keys';
 
 const RUNNING: AnalysisStatus[] = [AnalysisStatus.QUEUED, AnalysisStatus.PROCESSING];
 
@@ -18,10 +19,10 @@ const STATUS_COPY: Record<AnalysisStatus, string> = {
 };
 
 /**
- * The poll screen behind `POST /analyze` — refetches every 2.5s while the job
- * is queued/processing and goes quiet on any terminal status. Inference is
- * seconds-to-minutes on a GPU worker, so polling *is* the contract (see the
- * queue design in CLAUDE.md), not a stand-in for a socket.
+ * The screen behind `POST /analyze`. Inference is seconds-to-minutes on a GPU
+ * worker, so the status arrives as a push: `useAnalysisRealtime`, mounted in
+ * the `(app)` layout, invalidates this query when the row changes. Before that
+ * it polled every 2.5s.
  */
 export default function AnalysisScreen() {
   const theme = useTheme();
@@ -29,17 +30,13 @@ export default function AnalysisScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
 
   const job = useQuery({
-    queryKey: ['analysis', id],
+    queryKey: analysisKey(id),
     enabled: Boolean(id),
     queryFn: async () => {
       const res = await api.analyze[':id'].$get({ param: { id } });
       if (res.status === 404) throw new Error('This analysis does not exist.');
       if (res.status !== 200) throw new Error('Could not load the analysis.');
       return res.json();
-    },
-    refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status && (RUNNING as string[]).includes(status) ? 2500 : false;
     },
   });
 
@@ -68,11 +65,9 @@ export default function AnalysisScreen() {
         <>
           {job.data.status === AnalysisStatus.SUCCEEDED ? (
             <Score
-              value={
-                job.data.result?.resonanceScore != null
-                  ? Math.round(job.data.result.resonanceScore * 100)
-                  : null
-              }
+              // Already the absolute 0–100 the model design specifies (see
+              // apps/worker/README.md) — scaling it by 100 would render 8700.
+              value={job.data.result?.resonanceScore ?? null}
               caption={
                 job.data.result?.percentileInChannel != null
                   ? `Top ${100 - Math.round(job.data.result.percentileInChannel)}% for your channel`
@@ -96,11 +91,14 @@ export default function AnalysisScreen() {
             ) : null}
           </Card>
 
+          {/* `dismissTo`, not `replace`: this screen is a card on the `(app)`
+              Stack, and replacing it would leave a second `(tabs)` sitting on
+              top of the one it was pushed from. */}
           <Button
             label="Analyze another"
             variant="secondary"
             fullWidth
-            onPress={() => router.replace('/')}
+            onPress={() => router.dismissTo('/')}
           />
         </>
       )}

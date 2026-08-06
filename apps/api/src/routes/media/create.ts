@@ -14,6 +14,11 @@ const body = z.object({
     .regex(/^[-\w.]+\/[-+.\w]+$/)
     .optional(),
   byteSize: z.number().int().positive().optional(),
+  /**
+   * The uploader's own name for the file. Display only — the Storage object is
+   * keyed by id — so it is length-capped and otherwise taken as given.
+   */
+  fileName: z.string().min(1).max(255).optional(),
   /** Omit for the caller's personal workspace. */
   workspaceId: z.uuid().optional(),
 });
@@ -38,7 +43,7 @@ export const createMediaAsset = new Hono<AuthEnv>().post(
   '/',
   zValidator('json', body),
   async (c) => {
-    const { kind, mimeType, byteSize, workspaceId: requested } = c.req.valid('json');
+    const { kind, mimeType, byteSize, fileName, workspaceId: requested } = c.req.valid('json');
     const { id: profileId } = c.get('user');
 
     const created = await c.var.db(async (tx) => {
@@ -58,6 +63,7 @@ export const createMediaAsset = new Hono<AuthEnv>().post(
           status: MediaStatus.PENDING,
           storageBucket: MEDIA_BUCKET,
           storagePath: `${workspaceId}/${id}`,
+          fileName,
           mimeType,
           byteSize: byteSize === undefined ? undefined : BigInt(byteSize),
         },

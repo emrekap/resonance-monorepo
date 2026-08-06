@@ -1,4 +1,4 @@
-# Validation Experiment Spec — "Does the neuroscience earn its cost?"
+# Validation Experiment Spec - "Does the neuroscience earn its cost?"
 
 > **Status:** experiment design, pre-implementation (2026-08-02). Drill-down of §4 of
 > [resonance-model-design.md](resonance-model-design.md); consumes the labels defined in

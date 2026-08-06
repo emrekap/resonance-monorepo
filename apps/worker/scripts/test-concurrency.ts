@@ -1,0 +1,172 @@
+/**
+ * Proves two `analysis-results` jobs for the *same* analysis can run at once.
+ *
+ *   bun run test:concurrency
+ *
+ * The worker runs at concurrency 8, and `started` + `succeeded` for one analysis
+ * routinely land together — the ML worker publishes them seconds apart, and any
+ * restart drains a backlog holding both. Their transactions overlap on
+ * `analyses`, `inference_runs` and `analysis_results`, so if two handlers ever
+ * take those row locks in a different order Postgres kills one with 40P01 —
+ * burning a retry on a cycle that will still be there when it comes back.
+ *
+ * Safe to run against the dev project: it creates its own QUEUED analyses under
+ * an existing workspace/media asset and deletes them at the end — the cascade
+ * takes the `inference_runs` and `analysis_results` rows with them.
+ */
+import type { Job } from 'bullmq';
+import { prismaService } from '@repo/db';
+import { AnalysisStatus } from '@repo/db/enums';
+import { RESULT_JOB } from '@repo/queue';
+import { handleResult } from '../src/results.ts';
+
+const ROUNDS = Number(process.env.ROUNDS ?? 10);
+
+let passed = 0;
+const failures: string[] = [];
+
+function check(label: string, condition: boolean, detail = '') {
+  if (condition) {
+    passed++;
+  } else {
+    failures.push(`${label}${detail ? ` — ${detail}` : ''}`);
+    console.log(`  ✗ ${label}${detail ? ` — ${detail}` : ''}`);
+  }
+}
+
+/** BullMQ only hands the processor a name and a payload; nothing else is read. */
+function job(name: string, data: unknown): Job<unknown> {
+  return { name, data } as unknown as Job<unknown>;
+}
+
+function reason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+const isDeadlock = (error: unknown) => /40P01|deadlock/i.test(reason(error));
+
+const asset = await prismaService.mediaAsset.findFirst({
+  select: { id: true, workspaceId: true },
+  orderBy: { createdAt: 'desc' },
+});
+
+if (!asset) {
+  console.error('no media_assets row to hang a throwaway analysis off — upload one first');
+  process.exit(1);
+}
+
+// Connect before the race so the first round pays no handshake and both
+// transactions actually start together.
+await prismaService.$queryRaw`select 1`;
+
+const created: string[] = [];
+let deadlocks = 0;
+
+/**
+ * Races `started` against one terminal outcome for a fresh analysis.
+ *
+ * Both are dispatched in the same tick, which is what the eight-slot worker does
+ * with a drained backlog — and is enough to interleave the two transactions
+ * statement for statement.
+ */
+async function race(
+  round: number,
+  outcome: 'succeeded' | 'failed',
+  on: { id: string; workspaceId: string },
+): Promise<void> {
+  const analysis = await prismaService.analysis.create({
+    data: { workspaceId: on.workspaceId, mediaAssetId: on.id, status: AnalysisStatus.QUEUED },
+    select: { id: true },
+  });
+  created.push(analysis.id);
+
+  const startedAt = new Date().toISOString();
+  const finishedAt = new Date(Date.now() + 1_000).toISOString();
+  const identity = { analysisId: analysis.id, attempt: 1, queueJobId: analysis.id, device: 'cpu' };
+  const label = `round ${round} (started × ${outcome})`;
+
+  const terminal =
+    outcome === 'succeeded'
+      ? job(RESULT_JOB.succeeded, {
+          ...identity,
+          startedAt,
+          finishedAt,
+          durationMs: 1_000,
+          timeline: { startSec: [0, 1.49], attention: [0.1, 0.2] },
+          stats: {
+            globalMean: 0,
+            globalStd: 1,
+            globalMin: -3,
+            globalMax: 3,
+            nTimesteps: 2,
+            nVertices: 10,
+          },
+        })
+      : job(RESULT_JOB.failed, {
+          ...identity,
+          startedAt,
+          finishedAt,
+          error: 'RuntimeError: concurrency probe',
+          retryable: false,
+        });
+
+  const settled = await Promise.allSettled([
+    handleResult(job(RESULT_JOB.started, { ...identity, startedAt })),
+    handleResult(terminal),
+  ]);
+
+  for (const [index, result] of settled.entries()) {
+    const which = index === 0 ? 'started' : outcome;
+    if (result.status === 'rejected') {
+      if (isDeadlock(result.reason)) deadlocks++;
+      check(`${label}: ${which} committed`, false, reason(result.reason).slice(0, 120));
+    } else {
+      check(`${label}: ${which} committed`, true);
+    }
+  }
+
+  // Both events landing matters as much as neither erroring: the terminal
+  // outcome must win the status even when `started` is the one that arrives
+  // late. `analyses.started_at` is deliberately not asserted — a `started` that
+  // loses the race finds a finished analysis and correctly declines to touch it.
+  const row = await prismaService.analysis.findUniqueOrThrow({
+    where: { id: analysis.id },
+    select: {
+      status: true,
+      completedAt: true,
+      result: { select: { analysisId: true } },
+      inferenceRuns: { select: { finishedAt: true } },
+    },
+  });
+
+  const expected = outcome === 'succeeded' ? AnalysisStatus.SUCCEEDED : AnalysisStatus.FAILED;
+  check(`${label}: status ${expected}`, row.status === expected, row.status);
+  check(`${label}: completedAt written`, !!row.completedAt);
+  check(
+    `${label}: result row ${outcome === 'succeeded' ? 'written' : 'absent'}`,
+    outcome === 'succeeded' ? !!row.result : !row.result,
+  );
+  check(
+    `${label}: one finished inference run`,
+    row.inferenceRuns.length === 1 && !!row.inferenceRuns[0]?.finishedAt,
+    `${row.inferenceRuns.length} run(s)`,
+  );
+}
+
+console.log(`\nracing started × succeeded and started × failed, ${ROUNDS} rounds each`);
+
+try {
+  for (let round = 1; round <= ROUNDS; round++) {
+    await race(round, 'succeeded', asset);
+    await race(round, 'failed', asset);
+  }
+} finally {
+  await prismaService.analysis.deleteMany({ where: { id: { in: created } } });
+  console.log(`\ncleaned up ${created.length} throwaway analyses`);
+}
+
+console.log(`\n${passed} passed, ${failures.length} failed (${deadlocks} deadlocks)`);
+for (const failure of failures) console.log(`  ✗ ${failure}`);
+
+await prismaService.$disconnect();
+process.exit(failures.length === 0 ? 0 : 1);

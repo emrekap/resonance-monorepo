@@ -12,19 +12,25 @@ src/
   app/
     _layout.tsx           # providers + Stack.Protected guards — THE auth gate
     (onboarding)/         # signed-out: welcome → sign-in / sign-up (modals)
-    (app)/                # signed-in: tabs
-      index.tsx           #   Home — pick media → upload → analyze
-      accounts.tsx        #   Connected accounts (list / connect / disconnect)
-      analysis/[id].tsx   #   Poll GET /analyze/:id until the job settles
-      settings.tsx        #   Theme preference — auto / light / dark
+    (app)/                # signed-in: Stack (mounts the realtime subscription)
+      (tabs)/             #   the tab bar, and only the tab bar
+        index.tsx         #     Home — pick media → upload → analyze
+        history.tsx       #     Every analysis — paged, filtered, sorted
+        accounts.tsx      #     Connected accounts (list / connect / disconnect)
+      analysis/[id].tsx   #   pushed: GET /analyze/:id, refreshed by realtime
+      settings.tsx        #   pushed: theme preference — auto / light / dark
   design/                 # tokens, Theme type, ThemeProvider — see ../DESIGN.md
   components/
-    ui/                   # design-system primitives: Text, Screen, Surface, Card, Button, Meter, Badge, Bloom, Score
+    ui/                   # design-system primitives: Text, Screen, Surface, Card, Button, Chip, Meter, Badge, Bloom, Score
+    analysis-row.tsx      # one history row: score/status, name, age
     social-button.tsx, social-auth-panel.tsx
   hooks/
     use-media-analysis.ts # pick → register → upload → enqueue, as one state machine
+    use-analyses.ts       # GET /analyze paged (useInfiniteQuery)
+    use-analysis-realtime.ts # analyses changes → query invalidation, mounted in (app)/_layout
   lib/
     supabase.ts           # the auth client (AsyncStorage, PKCE, fg-only refresh)
+    query-keys.ts         # the TanStack keys, in one place so realtime can invalidate them
     auth.ts               # signInWithProvider / createSessionFromUrl
     api.ts                # RPC client, injects the Supabase access token
     media.ts              # pickers + the streaming Storage upload (UploadTask)
@@ -36,6 +42,14 @@ src/
 The root layout is the only place auth is checked: `Stack.Protected guard={session !== null}`
 mounts `(app)`, its inverse mounts `(onboarding)`. Screens never redirect on auth themselves —
 login/logout is the session state flipping and the router swapping stacks.
+
+Inside `(app)` the Stack wraps the tabs rather than the other way round. `analysis/[id]` and
+`settings` are pushed from inside a tab, and a screen only gets a back button and an edge-swipe if
+something pushed a card — as hidden tabs (`href: null`) they were reached by a tab _switch_, which
+renders no card. So they sit beside `(tabs)` on the Stack and cover the tab bar, which is correct:
+they are destinations, not a fourth and fifth tab. The consequence is that navigating between a
+tab and one of them is a stack operation — `router.navigate` / `dismissTo`, never `push`/`replace`,
+or you stack a second copy of the entire tab bar on top of the first.
 
 ## Auth — Supabase OAuth in a browser tab (PKCE)
 
@@ -74,11 +88,32 @@ four-phase pipeline:
    API never sees the bytes;
 4. **analyze** — `POST /analyze { mediaAssetId }` verifies the object landed (signed-URL mint
    under the same RLS), flips it READY, queues the GPU job, and the app navigates to
-   `analysis/[id]`, which polls every 2.5s until the status settles.
+   `analysis/[id]`, which refreshes when Realtime reports the row changed.
 
 Images upload but stop at "saved" — TRIBE takes video/audio, so the app doesn't queue an analysis
 the API would refuse. The bucket caps objects at 500 MiB and `video/* audio/* image/*` MIME types
 (enforced by Storage, before RLS).
+
+## History — the list, and what it does not have
+
+[`history.tsx`](<src/app/(app)/history.tsx>) is `GET /analyze` through
+[`use-analyses.ts`](src/hooks/use-analyses.ts): `useInfiniteQuery` over the API's `limit`/`offset`
+envelope, next offset taken from the page the server just described rather than counted here.
+
+- **Filters are the query key**, so a chip flip refetches from offset 0 while TanStack keeps the
+  previous rows mounted — no empty flash between filter states.
+- **"Running" is two statuses** (`QUEUED` + `PROCESSING`), sent as a repeated `?status=` param.
+- **Nothing polls.** `use-analysis-realtime.ts`, mounted once in `(app)/_layout.tsx`, subscribes to
+  `postgres_changes` on `public.analyses` and invalidates `['analyses']` — a signal, not a row
+  patch, since a list row also needs `analysis_results` and `media_assets` that only `GET /analyze`
+  joins. It re-invalidates on app resume too: a backgrounded socket drops and misses events.
+- **Filter state is not persisted.** Nothing deep-links into a filtered history, and a tab that
+  reopens on "All" is what a user expects.
+
+Two columns the rows want are still empty in the data: `durationSec` is never written, and
+`resonanceScore` is null until model calibration ships. The row composes its subtitle from whichever
+parts exist and shows a status dot where the score goes, so neither reads as broken — but that is
+why `file_name` exists, or every row would say "Video" and nothing else.
 
 ## Connected accounts — data access, not login
 

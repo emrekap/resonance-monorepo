@@ -42,8 +42,9 @@ RUN pip install --no-cache-dir -r requirements.txt \
 # whisperx on float16 and is otherwise a no-op.
 RUN python postinstall.py
 
-# App code.
+# App code (including entrypoint.sh, which is what CMD runs).
 COPY --chown=user:user . .
+RUN chmod +x entrypoint.sh
 
 # Safe local defaults. Override to /data/... via Space Variables once persistent
 # storage is enabled, so the ~10 GB of weights survive restarts:
@@ -52,5 +53,14 @@ ENV TRIBE_CACHE_DIR=/home/user/app/cache \
     HF_HOME=/home/user/.cache/huggingface \
     PORT=7860
 
+# REDIS_URL is NOT set here — it carries a password, so it comes in as a Space
+# secret (`python manage_space.py secrets` pushes it from .env). It must point
+# at a Redis the Space can actually reach: a managed one (Upstash, Redis Cloud),
+# never the localhost default that infra/docker serves.
+
 EXPOSE 7860
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
+
+# The queue worker plus the FastAPI face, in that order of importance — see the
+# comments in entrypoint.sh for why both live in one container and why only one
+# of them loads the model.
+CMD ["./entrypoint.sh"]

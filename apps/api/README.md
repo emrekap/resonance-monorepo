@@ -28,11 +28,13 @@ src/
     storage.ts        # `media` bucket constant + signed URLs via the caller's JWT
     oauth.ts          # connect-state HMAC + AES-256-GCM token sealing
     platforms.ts      # PlatformProvider registry (YouTube live, IG/TikTok stubs)
+    pagination.ts     # limit/offset/sort query fragment + `{ items, page }` envelope
   routes/
     health.ts         # flat: one route, no validation, no DB
     analyze/
       index.ts        # composes the domain + mounts requireAuth
       create.ts       # POST /analyze
+      list.ts         # GET  /analyze          — paginated, filtered, sorted
       get.ts          # GET  /analyze/:jobId
     connected-accounts/
       index.ts        # composes; /callback sits BEFORE requireAuth
@@ -169,6 +171,34 @@ publishable key.
 
 The old `mediaUrl` escape hatch (bucket `external`) still works for URL-addressable media and
 skips all of the above.
+
+## Lists — one pagination shape for every route
+
+[`src/lib/pagination.ts`](src/lib/pagination.ts) is the shared contract. A list route composes its
+query schema from `pageQuery(sortKeys, defaultSort)` and answers with `paginated(items, page, total)`:
+
+```text
+GET /analyze?limit=20&offset=20&sort=createdAt&order=desc
+            &status=QUEUED&status=PROCESSING&kind=VIDEO
+
+{ items: [...], page: { limit: 20, offset: 20, total: 47, hasMore: true } }
+```
+
+- **Offset, not a cursor.** A keyset cursor needs a composite encoding per sort column, and these
+  routes sort on nullable columns of _related_ tables (`analysis_results.resonance_score`). Offset
+  works with any `orderBy` Prisma can express and gives the client a real `total`. These rows are
+  GPU jobs someone waited minutes for — tens to hundreds per workspace, where the `COUNT` is noise.
+- **Sort keys are an allowlist** (`z.enum`), so no caller-supplied column name reaches Prisma and the
+  keys land in `AppType` as a literal union.
+- **`limit` above `MAX_LIMIT` is refused, not clamped.** A client asking for 500 rows should learn it
+  cannot have them rather than silently receive 100 and believe that was everything.
+- **Always order by a tiebreak.** `GET /analyze` appends `{ id: 'desc' }` to every sort: its two
+  optional sort columns are null on most rows, and without a deterministic second key offset paging
+  repeats one row on page 2 while skipping another.
+- **Repeated params** (`?status=A&status=B`) go through `repeatable()`. Hono reports one occurrence
+  as a string and several as an array; a schema accepting only arrays 400s on the common case.
+- **`findMany` and `count` share a `where` inside one transaction**, so the total always describes
+  the page it ships with.
 
 ## Queue — this process only produces
 

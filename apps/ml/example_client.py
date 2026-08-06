@@ -12,7 +12,7 @@ import json
 import argparse
 import requests
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:8040"
 
 
 def _auth_headers() -> dict:
@@ -80,7 +80,8 @@ def pretty_print_result(data: dict) -> None:
         print(
             f"\n── Segments ({len(segments)}) ─────────────────────────────────────────")
         for seg in segments[:10]:
-            dur = seg.get("duration", seg.get("stop", 0.0) - seg.get("start", 0.0))
+            dur = seg.get("duration", seg.get(
+                "stop", 0.0) - seg.get("start", 0.0))
             print(
                 f"  [{seg.get('start', 0.0):.2f}s – {seg.get('stop', 0.0):.2f}s]  "
                 f"{dur:.2f}s, {seg.get('n_events', '?')} events")

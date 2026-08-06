@@ -7,8 +7,10 @@ same HF_TOKEN / HUGGING_FACE_HUB_TOKEN / HUGGINGFACE_TOKEN aliases main.py uses.
 
 Commands:
     provision   Create the Space (if missing), set hardware + persistent storage,
-                push the TRIBE_CACHE_DIR/HF_HOME variables and HF_TOKEN secret,
-                enable Dev Mode, then upload the code (triggers the first build).
+                push the TRIBE_CACHE_DIR/HF_HOME variables and the HF_TOKEN +
+                REDIS_URL secrets, enable Dev Mode, then upload the code
+                (triggers the first build).
+    secrets     Re-push HF_TOKEN + REDIS_URL from .env to an existing Space.
     deploy      Re-upload the local code to the Space (sync a code change).
     status      Print the Space runtime (stage, hardware, storage, dev mode).
     pause       Pause the Space to stop hourly GPU billing.
@@ -17,6 +19,7 @@ Commands:
 Examples:
     python manage_space.py provision                 # full first-time setup
     python manage_space.py provision --public        # anyone can call the URL
+    python manage_space.py secrets                    # after rotating REDIS_URL
     python manage_space.py deploy                     # after editing code
     python manage_space.py pause                       # stop the meter
 """
@@ -47,13 +50,17 @@ UPLOAD_IGNORE = [
 ]
 
 
-def _resolve_token() -> str:
-    """Load .env and return the HF token, matching main.py's alias handling."""
+def _load_env() -> None:
     try:
         from dotenv import load_dotenv
         load_dotenv(REPO_ROOT / ".env")
     except ImportError:
         pass
+
+
+def _resolve_token() -> str:
+    """Load .env and return the HF token, matching main.py's alias handling."""
+    _load_env()
     token = (
         os.environ.get("HF_TOKEN")
         or os.environ.get("HUGGING_FACE_HUB_TOKEN")
@@ -85,6 +92,43 @@ def _step(label: str, fn) -> None:
         print(f"  [warn] {label}: {exc}")
 
 
+# A Redis the Space cannot reach is the most likely way this deploy goes wrong:
+# the container comes up, uvicorn answers /health, and worker.py dies on connect.
+_UNREACHABLE_REDIS_HOSTS = ("127.0.0.1", "localhost", "::1", "host.docker.internal")
+
+
+def _push_secrets(api: HfApi, token: str, repo_id: str) -> None:
+    """Push HF_TOKEN + REDIS_URL from .env into the Space's secrets.
+
+    Secrets, not variables: both carry a credential, and Space variables are
+    readable by anyone who can see the Space. Values are read from the local
+    .env, which manage_space.py never uploads (see UPLOAD_IGNORE).
+    """
+    _step("secret HF_TOKEN (from .env)",
+          lambda: api.add_space_secret(repo_id, "HF_TOKEN", token, token=token))
+
+    redis_url = (os.environ.get("REDIS_URL") or "").strip()
+    if not redis_url:
+        print("  [warn] REDIS_URL not set in .env — the queue worker in the Space "
+              "will fall back to localhost and fail to connect.")
+        return
+    if any(host in redis_url for host in _UNREACHABLE_REDIS_HOSTS):
+        print(f"  [warn] REDIS_URL points at {redis_url.rsplit('@', 1)[-1]}, which the "
+              "Space cannot reach. Use a managed Redis (Upstash, Redis Cloud) and re-run "
+              "`python manage_space.py secrets`.")
+        return
+    _step("secret REDIS_URL (from .env)",
+          lambda: api.add_space_secret(repo_id, "REDIS_URL", redis_url, token=token))
+
+
+def secrets(api: HfApi, token: str, args) -> None:
+    repo_id = _repo_id(api, token, args.name)
+    print(f"Pushing secrets to '{repo_id}'…")
+    _push_secrets(api, token, repo_id)
+    print("Done. Restart the Space for them to take effect: "
+          "python manage_space.py restart")
+
+
 def provision(api: HfApi, token: str, args) -> None:
     repo_id = _repo_id(api, token, args.name)
     hardware = SpaceHardware(args.hardware)
@@ -106,8 +150,7 @@ def provision(api: HfApi, token: str, args) -> None:
     for key, value in SPACE_VARIABLES.items():
         _step(f"variable {key}={value}",
               lambda k=key, v=value: api.add_space_variable(repo_id, k, v, token=token))
-    _step("secret HF_TOKEN (from .env)",
-          lambda: api.add_space_secret(repo_id, "HF_TOKEN", token, token=token))
+    _push_secrets(api, token, repo_id)
 
     if args.dev_mode:
         _step("enable Dev Mode (requires HF PRO)",
@@ -178,6 +221,7 @@ def main() -> None:
                         help="skip enabling Dev Mode (which requires HF PRO)")
     p_prov.set_defaults(func=provision, dev_mode=True)
 
+    sub.add_parser("secrets", help="re-push HF_TOKEN + REDIS_URL from .env").set_defaults(func=secrets)
     sub.add_parser("deploy", help="re-upload local code").set_defaults(func=deploy)
     sub.add_parser("status", help="show runtime status").set_defaults(func=status)
     sub.add_parser("pause", help="pause the Space (stop billing)").set_defaults(func=pause)

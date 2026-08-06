@@ -30,6 +30,8 @@ throughput, which is a small fraction of it.
 src/
   index.ts     # boots the Worker, logs, drains on SIGINT/SIGTERM
   results.ts   # the handlers — one per job name, all idempotent
+scripts/
+  test-concurrency.ts   # races two events for one analysis against a real database
 ```
 
 ## The three job names
@@ -52,6 +54,31 @@ retry, a reordering). So:
 - `started` uses `updateMany` gated on `status: QUEUED`, which cannot walk a finished analysis back.
 - `inference_runs` is upserted on `(analysis_id, attempt)`.
 - `analysis_results` is upserted on `analysis_id`.
+
+## Concurrency — one lock, taken first
+
+Idempotency is not enough on its own. The worker runs **8 jobs at a time**, and two events for the
+_same_ analysis routinely arrive together (they are published seconds apart, and any restart drains a
+backlog holding both). Their transactions overlap on the same three tables, so whichever order each
+handler happened to write in became a lock order — and `started` (analyses → inference_runs) against
+`succeeded` (inference_runs → analyses) is a cycle. Postgres broke it the only way it can: **40P01
+deadlock detected**, one transaction killed, one event lost.
+
+So every handler now takes the `analyses` row with `SELECT … FOR NO KEY UPDATE` **before anything
+else** (`lockAnalysis` in `results.ts`). One ordering point for all three, so writers of one analysis
+queue instead of colliding, and statement order inside a handler stops being load-bearing.
+
+```bash
+bun run test:concurrency    # races started × succeeded and started × failed, N rounds each
+```
+
+That script drives the real handlers against a real database on throwaway analyses it deletes
+afterwards. Before the lock it deadlocked in ~5 of every 6 rounds.
+
+Retries are the second half: BullMQ reads the retry policy off the **job**, so it is set by the
+producer — `ML_RESULT_ATTEMPTS` (default 5) in `apps/ml/worker.py`. Without it every result job had a
+single attempt, and any transient Postgres error discarded the outcome of a GPU run that cannot be
+recomputed, stranding the analysis in PROCESSING.
 
 ## Not written yet
 

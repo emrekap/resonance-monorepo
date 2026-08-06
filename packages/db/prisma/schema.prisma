@@ -175,6 +175,10 @@ model MediaAsset {
   /// Namespaced `{workspace_id}/{media_asset_id}` — the Storage RLS policy
   /// reads the first path segment.
   storagePath   String      @map("storage_path")
+  /// As the uploader named it, for display only — the Storage object is keyed
+  /// by id, never by this. Null for an asset registered from a URL, and for
+  /// every row written before the column existed.
+  fileName      String?     @map("file_name") @db.VarChar(255)
   mimeType      String?     @map("mime_type")
   byteSize      BigInt?     @map("byte_size")
   durationSec   Float?      @map("duration_sec")

@@ -104,13 +104,16 @@ def _pin_whisperx_env() -> None:
 
 
 def _select_device() -> str:
-    """Pick the fastest available torch device for the feature extractors.
+    """Pick the fastest available torch device for the TRIBE brain model.
 
     Preference: CUDA > Apple Silicon GPU (MPS) > CPU. The library's own "auto"
-    only knows cuda/cpu, so on a Mac it would fall back to (very slow) CPU for
-    the ViT-g video encoders. When choosing MPS we enable
-    PYTORCH_ENABLE_MPS_FALLBACK so any op not implemented on Metal runs on CPU
-    instead of crashing. Override with TRIBE_DEVICE=cpu|cuda|mps if needed.
+    only knows cuda/cpu, so on a Mac it would fall back to CPU. When choosing
+    MPS we enable PYTORCH_ENABLE_MPS_FALLBACK so any op not implemented on
+    Metal runs on CPU instead of crashing. Override with
+    TRIBE_DEVICE=cpu|cuda|mps if needed.
+
+    This is the device for the brain model only — see `_extractor_device` for
+    the feature extractors, which accept a narrower set.
     """
     forced = os.getenv("TRIBE_DEVICE")
     if forced:
@@ -130,9 +133,32 @@ def _select_device() -> str:
     return device
 
 
+# neuralset (which owns the feature extractors) declares `device` as a closed
+# pydantic Literal — "auto" | "cpu" | "cuda" | "accelerate" — and has no MPS
+# support anywhere in the package. Handing it "mps" fails validation inside
+# `TribeModel(**config)`, before torch is ever reached. So the extractors get
+# the nearest legal device while the brain model keeps whatever `_select_device`
+# picked: `TribeModel.predict` moves every batch to `model.device`, so the two
+# do not have to agree.
+_NEURALSET_DEVICES = ("auto", "cpu", "cuda", "accelerate")
+
+
+def _extractor_device(device: str) -> str:
+    if device in _NEURALSET_DEVICES:
+        return device
+    logger.warning(
+        f"neuralset's feature extractors do not support device '{device}' "
+        f"(accepted: {', '.join(_NEURALSET_DEVICES)}) — they will run on CPU, "
+        f"which is slow for the ViT-g video encoders. The TRIBE model itself "
+        f"still runs on '{device}'."
+    )
+    return "cpu"
+
+
 _ensure_binaries_on_path()
 _pin_whisperx_env()
 DEVICE = _select_device()
+EXTRACTOR_DEVICE = _extractor_device(DEVICE)
 
 # ---------------------------------------------------------------------------
 # Global model instance (loaded once per process)
@@ -142,8 +168,8 @@ CACHE_DIR = Path(os.getenv("TRIBE_CACHE_DIR", "./cache"))
 
 
 # The pretrained config.yaml hardcodes `device: cuda` for every feature
-# extractor (text/audio/video/image). Override to the selected device so they
-# run on MPS/CPU when no CUDA GPU is present.
+# extractor (text/audio/video/image). Override to EXTRACTOR_DEVICE so they run
+# on CPU when no CUDA GPU is present.
 _FEATURE_DEVICE_KEYS = (
     "data.text_feature.device",
     "data.audio_feature.device",
@@ -176,7 +202,7 @@ def load_model():
             "facebook/tribev2",
             cache_folder=str(CACHE_DIR),
             device=DEVICE,
-            config_update={key: DEVICE for key in _FEATURE_DEVICE_KEYS},
+            config_update={key: EXTRACTOR_DEVICE for key in _FEATURE_DEVICE_KEYS},
         )
         logger.info("TRIBE v2 model loaded successfully.")
     except Exception as exc:

@@ -1,5 +1,5 @@
 import { UnrecoverableError, type Job } from 'bullmq';
-import { prismaService, type Prisma } from '@repo/db';
+import { prismaService, type Prisma, type Tx } from '@repo/db';
 import { AnalysisStatus } from '@repo/db/enums';
 import {
   RESULT_JOB,
@@ -25,6 +25,32 @@ import {
  * arrive twice — and out of order relative to its own `started`.
  */
 
+/**
+ * Takes the one row every handler for this analysis must queue behind.
+ *
+ * The three handlers write overlapping sets of rows — `analyses`,
+ * `inference_runs`, `analysis_results` — and the worker runs eight at a time, so
+ * `started` and its `succeeded`/`failed` regularly overlap: they are published
+ * seconds apart, and any restart drains a backlog holding both. Two
+ * transactions touching the same rows in opposite order is a deadlock, and
+ * Postgres resolves it by killing one (40P01). The producer does give these
+ * jobs a few attempts, but spending them re-entering a lock cycle the code
+ * created is not a policy — and a backlog large enough to deadlock twice is
+ * exactly the moment the retries are needed for something else.
+ *
+ * Locking the parent first gives all three the same, single ordering point, so
+ * the loser waits a few milliseconds instead of dying. `FOR NO KEY UPDATE` is
+ * the lock the `analyses` UPDATE below would take anyway, and it deliberately
+ * does not conflict with the `FOR KEY SHARE` that inserting a child row needs.
+ *
+ * Statement order inside the handlers is then free to change without
+ * reintroducing the bug — which is why this is a lock and not a convention
+ * about which write goes first.
+ */
+async function lockAnalysis(tx: Tx, analysisId: string): Promise<void> {
+  await tx.$executeRaw`select id from public.analyses where id = ${analysisId}::uuid for no key update`;
+}
+
 /** BullMQ hands the processor a job whose `data` is still untrusted JSON. */
 export async function handleResult(job: Job<unknown>): Promise<void> {
   switch (job.name) {
@@ -43,15 +69,18 @@ export async function handleResult(job: Job<unknown>): Promise<void> {
 async function onStarted(result: AnalysisStarted): Promise<void> {
   const startedAt = new Date(result.startedAt);
 
-  await prismaService.$transaction([
+  await prismaService.$transaction(async (tx) => {
+    await lockAnalysis(tx, result.analysisId);
+
     // `updateMany` with `status: QUEUED` rather than `update`, so a `started`
     // that arrives after its own `succeeded` — reordered by two workers or a
     // retry — cannot walk a finished analysis back to PROCESSING.
-    prismaService.analysis.updateMany({
+    await tx.analysis.updateMany({
       where: { id: result.analysisId, status: AnalysisStatus.QUEUED },
       data: { status: AnalysisStatus.PROCESSING, startedAt },
-    }),
-    prismaService.inferenceRun.upsert({
+    });
+
+    await tx.inferenceRun.upsert({
       where: { analysisId_attempt: { analysisId: result.analysisId, attempt: result.attempt } },
       create: {
         analysisId: result.analysisId,
@@ -61,8 +90,8 @@ async function onStarted(result: AnalysisStarted): Promise<void> {
         startedAt,
       },
       update: { queueJobId: result.queueJobId, device: result.device, startedAt },
-    }),
-  ]);
+    });
+  });
 }
 
 async function onSucceeded(result: AnalysisSucceeded): Promise<void> {
@@ -79,6 +108,8 @@ async function onSucceeded(result: AnalysisSucceeded): Promise<void> {
   };
 
   await prismaService.$transaction(async (tx) => {
+    await lockAnalysis(tx, result.analysisId);
+
     await tx.inferenceRun.upsert({
       where: { analysisId_attempt: { analysisId: result.analysisId, attempt: result.attempt } },
       create: {
@@ -127,6 +158,8 @@ async function onFailed(result: AnalysisFailed): Promise<void> {
   const finishedAt = new Date(result.finishedAt);
 
   await prismaService.$transaction(async (tx) => {
+    await lockAnalysis(tx, result.analysisId);
+
     await tx.inferenceRun.upsert({
       where: { analysisId_attempt: { analysisId: result.analysisId, attempt: result.attempt } },
       create: {

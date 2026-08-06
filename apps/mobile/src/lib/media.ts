@@ -90,6 +90,9 @@ export async function registerMedia(
       kind: media.kind,
       mimeType: media.mimeType,
       byteSize: media.byteSize,
+      // Display only, and the history list is the only reader — without it
+      // every row there reads "Video" and nothing else.
+      fileName: media.fileName,
       workspaceId,
     },
   });

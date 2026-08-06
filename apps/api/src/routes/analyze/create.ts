@@ -153,7 +153,7 @@ export const createAnalysis = new Hono<AuthEnv>().post('/', zValidator('json', b
     modality: assetModality,
     media: { assetId: asset.id, url },
   };
-
+  console.log('job: ', job);
   try {
     await enqueueAnalysis(job);
   } catch (cause) {
