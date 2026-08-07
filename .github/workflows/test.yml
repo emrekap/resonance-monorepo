@@ -40,6 +40,8 @@ jobs:
     name: turbo (typecheck + test)
     runs-on: ubuntu-latest
     environment: test
+    env:
+      DIRECT_DATABASE_URL: ${{secrets.TEST_DIRECT_DATABASE_URL}}
     steps:
       - uses: actions/checkout@v5
 
