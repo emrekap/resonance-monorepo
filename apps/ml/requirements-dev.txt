@@ -1,0 +1,18 @@
+# Dev + CI only — deliberately NOT a superset of requirements.txt.
+#
+# The production file pins torch from PyTorch's own index and installs tribev2
+# from git; installing it in CI would cost gigabytes and minutes for a suite
+# that must not touch any of it. Keeping this list small is itself the test:
+# if a tested module grows a module-scope `import torch`, CI goes red here.
+#
+#   python -m venv .venv && ./.venv/bin/pip install -r requirements-dev.txt
+#   ./.venv/bin/python -m pytest
+
+pytest>=8.0
+pytest-asyncio>=0.24
+
+# Runtime imports the suite genuinely needs.
+numpy>=2.1          # parcellation, the atlas, the synthetic tensor
+pydantic>=2         # queue_contract
+bullmq>=3.0         # worker.py imports Queue / Worker / UnrecoverableError
+requests>=2.31      # worker.py's _download (monkeypatched, but imported)

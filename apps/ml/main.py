@@ -138,7 +138,7 @@ async def health():
         # us owns it — only report it as missing when we were meant to serve.
         "status": "ok" if (engine.is_loaded() or not SERVES_INFERENCE) else "model_not_loaded",
         "model": "facebook/tribev2",
-        "device": engine.DEVICE,
+        "device": engine.device(),
         "cache_dir": str(engine.CACHE_DIR.resolve()),
         "inference": "http" if SERVES_INFERENCE else "queue-worker",
     }
