@@ -40,6 +40,8 @@ jobs:
   node:
     name: turbo (typecheck + test)
     runs-on: ubuntu-latest
+    env:
+      DIRECT_DATABASE_URL: ${{secrets.TEST_DIRECT_DATABASE_URL}}
     steps:
       - uses: actions/checkout@v4
 
@@ -60,5 +62,3 @@ jobs:
       # reach that host rather than find a real one. (turbo only forwards it
       # because `build` lists it in `passThroughEnv`.)
       - run: bunx turbo run typecheck test
-        env:
-          DIRECT_DATABASE_URL: ${{secrets.TEST_DIRECT_DATABASE_URL}}
