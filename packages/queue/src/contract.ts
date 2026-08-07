@@ -142,21 +142,40 @@ export const timelineSchema = z.object({
 export type Timeline = z.infer<typeof timelineSchema>;
 
 /**
- * Clip-level activation per product axis, in `analysis_axis_scores.position`
- * order.
+ * Clip-level statistics for one product axis, in raw z-scored BOLD units.
  *
- * These are raw z-scored BOLD means, not scores — they are never rendered.
- * `apps/worker` ranks them against the same workspace's prior analyses to get
- * the 0–100 a creator sees, which is why the raw value has to cross the queue
- * rather than being reduced here: a percentile needs the *history*, and
- * `apps/ml` has no database.
+ * Three, not one, because which of them should *be* the score is an open
+ * empirical question — there is no calibration data yet. Sending all three makes
+ * that a one-line constant in `apps/worker/src/scoring.ts` rather than a change
+ * to the ML image and this contract together.
+ *
+ * `mean` is the weakest of the three and is kept for comparison: TRIBE predicts
+ * z-scored BOLD, so a time-average sits near zero by construction — the same
+ * objection `docs/resonance-model-design.md` §0 raises against the brain-wide
+ * average. `std` is that doc's "dynamism" proxy; `peak` (top-quartile mean) is
+ * the closest to "did the hook land".
+ */
+export const axisSummarySchema = z.object({
+  mean: z.number(),
+  std: z.number(),
+  peak: z.number(),
+});
+export type AxisSummary = z.infer<typeof axisSummarySchema>;
+
+/**
+ * The five product axes, in `analysis_axis_scores.position` order.
+ *
+ * Never rendered. `apps/worker` ranks these against the same workspace's prior
+ * analyses to get the 0–100 a creator sees, which is why the raw values have to
+ * cross the queue rather than being reduced here: a percentile needs the
+ * *history*, and `apps/ml` has no database.
  */
 export const axisBandsSchema = z.object({
-  visual: z.number(),
-  audio: z.number(),
-  language: z.number(),
-  emotional: z.number(),
-  memorability: z.number(),
+  visual: axisSummarySchema,
+  audio: axisSummarySchema,
+  language: axisSummarySchema,
+  emotional: axisSummarySchema,
+  memorability: axisSummarySchema,
 });
 export type AxisBands = z.infer<typeof axisBandsSchema>;
 

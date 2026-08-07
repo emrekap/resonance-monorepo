@@ -1,29 +1,73 @@
 import { describe, expect, test } from 'bun:test';
 import { AxisConfidence, ResonanceAxis } from '@repo/db/enums';
-import type { AxisBands } from '@repo/queue';
+import type { AxisBands, AxisSummary } from '@repo/queue';
 
-import { MIN_HISTORY, composite, confidence, percentile, scoreAnalysis } from './scoring';
+import {
+  BAND_SUMMARY,
+  MIN_HISTORY,
+  composite,
+  confidence,
+  percentile,
+  scoreAnalysis,
+} from './scoring';
 
-const bands = (overrides: Partial<AxisBands> = {}): AxisBands => ({
-  visual: 0,
-  audio: 0,
-  language: 0,
-  emotional: 0,
-  memorability: 0,
-  ...overrides,
+/**
+ * Only the statistic `BAND_SUMMARY` selects carries the value; the other two get
+ * an obviously-wrong sentinel, so a test that passes because scoring read the
+ * wrong field fails loudly instead of quietly agreeing.
+ *
+ * Keyed off the exported constant rather than hardcoding `peak`, so switching
+ * the chosen statistic does not silently invalidate every assertion below.
+ */
+const summary = (value: number): AxisSummary => ({
+  mean: -999,
+  std: -999,
+  peak: -999,
+  [BAND_SUMMARY]: value,
 });
+
+const AXES = ['visual', 'audio', 'language', 'emotional', 'memorability'] as const;
+
+const bands = (overrides: Partial<Record<keyof AxisBands, number>> = {}): AxisBands =>
+  Object.fromEntries(AXES.map((axis) => [axis, summary(overrides[axis] ?? 0)])) as AxisBands;
 
 /** `n` prior analyses whose composite climbs 0, 1, 2, … so ranks are predictable. */
 const ladder = (n: number): AxisBands[] =>
   Array.from({ length: n }, (_, index) => bands({ visual: index, audio: index, language: index }));
 
 describe('percentile', () => {
-  test('is the strictly-less-than rank, so ties do not read as average', () => {
+  test('pins the ends of the observed range', () => {
     expect(percentile(5, [1, 2, 3, 4])).toBe(100);
+    expect(percentile(9, [1, 2, 3, 4])).toBe(100);
     expect(percentile(0, [1, 2, 3, 4])).toBe(0);
-    expect(percentile(3, [1, 2, 3, 4])).toBe(50);
-    // Tied with everything: "not better than", not "middling".
-    expect(percentile(2, [2, 2, 2, 2])).toBe(0);
+    expect(percentile(1, [1, 2, 3, 4])).toBe(0);
+  });
+
+  test('lands on the plain rank when the value sits on a prior', () => {
+    expect(percentile(2, [1, 2, 3, 4])).toBeCloseTo(100 / 3);
+    expect(percentile(3, [1, 2, 3, 4])).toBeCloseTo(200 / 3);
+  });
+
+  test('interpolates between priors instead of stepping', () => {
+    // The whole point of #2: with 5 priors a raw count gives only 0/20/…/100.
+    const history = [0, 1, 2, 3, 4];
+    const scores = [0.5, 1.5, 2.5, 3.5].map((value) => percentile(value, history));
+    expect(scores).toEqual([12.5, 37.5, 62.5, 87.5]);
+    // Every value distinct — a counting implementation would repeat.
+    expect(new Set(scores).size).toBe(scores.length);
+  });
+
+  test('is monotonic', () => {
+    const history = [0, 1, 2, 3, 4];
+    const scores = [0, 0.3, 1.1, 2.7, 3.9, 4].map((value) => percentile(value, history));
+    expect([...scores].sort((a, b) => a - b)).toEqual(scores);
+  });
+
+  test('a clip matching an entirely flat history is typical, not worst', () => {
+    // Previously returned 0, which rendered as "worst" for an average clip.
+    expect(percentile(2, [2, 2, 2, 2])).toBe(50);
+    expect(percentile(3, [2, 2, 2, 2])).toBe(100);
+    expect(percentile(1, [2, 2, 2, 2])).toBe(0);
   });
 
   test('is 0 on empty history rather than dividing by zero', () => {
@@ -87,8 +131,11 @@ describe('scoreAnalysis', () => {
       hasSpeech: true,
     });
 
-    expect(scored.percentileInChannel).toBe(50);
+    // Value 5 against priors 0..9 sits 5/9 of the way along the observed range.
+    expect(scored.percentileInChannel).toBeCloseTo((5 / 9) * 100);
     expect(scored.resonanceScore).toBe(Math.round(scored.percentileInChannel as number));
+    // The property that matters: one rank, two presentations — never two numbers.
+    expect(scored.resonanceScore).toBe(56);
   });
 
   test('emits axes in position order matching the enum', () => {

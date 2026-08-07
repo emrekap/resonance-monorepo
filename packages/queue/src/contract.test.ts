@@ -21,7 +21,25 @@ describe('analysis.succeeded — the Pydantic payload', () => {
     const parsed = analysisSucceededSchema.parse(fixture);
     expect(parsed.analysisId).toBe(fixture.analysisId);
     expect(parsed.timeline.startSec).toHaveLength(3);
-    expect(parsed.axisBands?.visual).toBeCloseTo(0.19);
+    expect(parsed.axisBands?.visual.peak).toBeCloseTo(0.88);
+  });
+
+  test('carries all three statistics for all five axes', () => {
+    const { axisBands } = analysisSucceededSchema.parse(fixture);
+    // The point of sending three: which one becomes the score is a one-line
+    // constant in apps/worker, not a change to the ML image and this contract.
+    for (const axis of ['visual', 'audio', 'language', 'emotional', 'memorability'] as const) {
+      expect(Object.keys(axisBands![axis]).sort()).toEqual(['mean', 'peak', 'std']);
+    }
+  });
+
+  test('rejects the old flat shape, where a band was a bare number', () => {
+    expect(() =>
+      analysisSucceededSchema.parse({
+        ...fixture,
+        axisBands: { ...fixture.axisBands, visual: 0.19 },
+      }),
+    ).toThrow();
   });
 
   test('carries all five timeline arrays at equal length', () => {

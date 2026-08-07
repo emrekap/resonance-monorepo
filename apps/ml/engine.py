@@ -302,8 +302,8 @@ def predictions_to_dict(preds: np.ndarray, segments: list) -> dict:
         "axis_timeline": {
             axis: bands[:, index].tolist() for index, axis in enumerate(parcellation.AXES)
         },
-        # One scalar per axis for the whole clip — what apps/worker ranks.
-        "axis_means": parcellation.clip_means(bands),
+        # Per-axis clip-level statistics — apps/worker ranks one of them.
+        "axis_means": parcellation.clip_summary(bands),
         "duration_sec": max((meta["stop"] for meta in seg_meta), default=0.0),
         "stats": {
             "global_mean": float(preds.mean()),

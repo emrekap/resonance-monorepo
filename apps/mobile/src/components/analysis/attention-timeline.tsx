@@ -41,11 +41,43 @@ export type TimelineMarker = {
 
 export interface AttentionTimelineProps {
   timeline: TimelineBands;
-  /** Moments called out by the recommendations, drawn as vertical rules. */
-  markers?: readonly TimelineMarker[];
   /** Highlighted moment, set when a recommendation row is tapped. */
   focusSec?: number | null;
   height?: number;
+}
+
+/**
+ * The strongest peak and deepest dip in the combined response.
+ *
+ * Derived here rather than passed in. The screen only knows which moments the
+ * recommendations point at, and it cannot tell a peak from a dip — an earlier
+ * version mapped every recommendation to `kind: 'dip'`, so a moment the model
+ * praised was drawn in warning colour. The curve is right here; classifying it
+ * is three lines and cannot disagree with what is on screen.
+ *
+ * `apps/worker` runs its own marker detection for the prompt. The two need not
+ * agree: that one decides what Claude explains, this one decides what a creator
+ * sees, and both read the same curve.
+ */
+function deriveMarkers(timeline: TimelineBands): TimelineMarker[] {
+  const combined = timeline.startSec.map((startSec, index) => ({
+    startSec,
+    value:
+      (timeline.visual[index] ?? 0) +
+      (timeline.audio[index] ?? 0) +
+      (timeline.language[index] ?? 0),
+  }));
+  if (combined.length < 3) return [];
+
+  const sorted = [...combined].sort((a, b) => a.value - b.value);
+  const dip = sorted[0];
+  const peak = sorted[sorted.length - 1];
+  if (!dip || !peak || dip.startSec === peak.startSec) return [];
+
+  return [
+    { kind: 'peak' as const, startSec: peak.startSec },
+    { kind: 'dip' as const, startSec: dip.startSec },
+  ].sort((a, b) => a.startSec - b.startSec);
 }
 
 const BANDS = [
@@ -90,12 +122,13 @@ function buildPath(
 
 export function AttentionTimeline({
   timeline,
-  markers = [],
   focusSec = null,
   height = 132,
 }: AttentionTimelineProps) {
   const theme = useTheme();
   const [width, setWidth] = useState(0);
+
+  const markers = useMemo(() => deriveMarkers(timeline), [timeline]);
 
   const domain = useMemo(() => {
     const all = [...timeline.visual, ...timeline.audio, ...timeline.language];

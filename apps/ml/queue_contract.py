@@ -90,22 +90,39 @@ class Timeline(BaseModel):
     language: Optional[list[float]] = None
 
 
-class AxisBands(BaseModel):
-    """Clip-level activation per product axis, in `analysis_axis_scores.position` order.
+class AxisSummary(BaseModel):
+    """Clip-level statistics for one product axis, in raw z-scored BOLD units.
 
-    Raw z-scored BOLD means, never rendered. `apps/worker` ranks them against the
-    workspace's prior analyses to produce the 0-100 a creator sees — the raw
-    value has to cross the queue because a percentile needs history, and this
-    process has no database.
+    Three, not one, because which of them should *be* the score is an open
+    empirical question — there is no calibration data yet. Sending all three
+    makes that a one-line constant in `apps/worker/src/scoring.ts` rather than a
+    change to this image and the TypeScript contract together. See
+    `parcellation.clip_summary` for what each one measures.
     """
 
     model_config = ConfigDict(extra="ignore")
 
-    visual: float
-    audio: float
-    language: float
-    emotional: float
-    memorability: float
+    mean: float
+    std: float
+    peak: float
+
+
+class AxisBands(BaseModel):
+    """The five product axes, in `analysis_axis_scores.position` order.
+
+    Never rendered. `apps/worker` ranks these against the workspace's prior
+    analyses to produce the 0-100 a creator sees — the raw values have to cross
+    the queue because a percentile needs history, and this process has no
+    database.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    visual: AxisSummary
+    audio: AxisSummary
+    language: AxisSummary
+    emotional: AxisSummary
+    memorability: AxisSummary
 
 
 class TranscriptEntry(BaseModel):

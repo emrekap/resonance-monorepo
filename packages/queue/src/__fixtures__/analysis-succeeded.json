@@ -29,11 +29,31 @@
     }
   ],
   "axisBands": {
-    "visual": 0.19,
-    "audio": 0.046,
-    "language": -0.006,
-    "emotional": 0.02,
-    "memorability": -0.01
+    "visual": {
+      "mean": 0.19,
+      "std": 0.42,
+      "peak": 0.88
+    },
+    "audio": {
+      "mean": 0.046,
+      "std": 0.31,
+      "peak": 0.51
+    },
+    "language": {
+      "mean": -0.006,
+      "std": 0.27,
+      "peak": 0.34
+    },
+    "emotional": {
+      "mean": 0.02,
+      "std": 0.19,
+      "peak": 0.22
+    },
+    "memorability": {
+      "mean": -0.01,
+      "std": 0.24,
+      "peak": 0.29
+    }
   },
   "stats": {
     "globalMean": 0.0001,

@@ -1,4 +1,4 @@
-import type { AxisBands } from '@repo/queue';
+import type { AxisBands, AxisSummary } from '@repo/queue';
 import { AxisConfidence, ResonanceAxis } from '@repo/db/enums';
 
 /**
@@ -29,6 +29,32 @@ import { AxisConfidence, ResonanceAxis } from '@repo/db/enums';
  * prove jumpy.
  */
 export const MIN_HISTORY = 5;
+
+/**
+ * Which of the three per-axis statistics becomes the score.
+ *
+ * **This is the most consequential line in the file, and it is a guess.** All
+ * three cross the queue (see `axisSummarySchema`) precisely so that settling it
+ * against real data is a one-word edit here rather than a change to `apps/ml`,
+ * the contract and a GPU deploy.
+ *
+ * - `peak` — mean of the top quartile of segments. Chosen as the default: it is
+ *   the closest of the three to the question the product asks ("did this hold
+ *   attention at its best moments"), and unlike `mean` it does not average the
+ *   signal away.
+ * - `std` — how much the network's response varied. `docs/resonance-model-design.md`
+ *   §0 offers this as a "dynamism" proxy. Blind to direction: a clip that swings
+ *   downward scores like one that swings up.
+ * - `mean` — the original choice, kept for comparison and **not recommended**.
+ *   TRIBE predicts z-scored BOLD, so a time-average sits near zero by
+ *   construction; that is the same objection §0 raises against the brain-wide
+ *   average, and it applies within a network too, just less severely.
+ *
+ * How to settle it: run a batch of real clips, rank each way, and check which
+ * ordering a human would defend. Until then this is a documented guess, not a
+ * finding.
+ */
+export const BAND_SUMMARY: keyof AxisSummary = 'peak';
 
 /**
  * How much each axis moves the headline number.
@@ -69,27 +95,55 @@ export type Scored = {
   axisRows: AxisRow[];
 };
 
+/** The chosen statistic for one axis. See {@link BAND_SUMMARY}. */
+export function band(bands: AxisBands, axis: keyof AxisBands): number {
+  return bands[axis][BAND_SUMMARY];
+}
+
 /** The single number the percentile ranks. See {@link COMPOSITE_WEIGHTS}. */
 export function composite(bands: AxisBands): number {
   return (
-    bands.visual * COMPOSITE_WEIGHTS.visual +
-    bands.audio * COMPOSITE_WEIGHTS.audio +
-    bands.language * COMPOSITE_WEIGHTS.language
+    band(bands, 'visual') * COMPOSITE_WEIGHTS.visual +
+    band(bands, 'audio') * COMPOSITE_WEIGHTS.audio +
+    band(bands, 'language') * COMPOSITE_WEIGHTS.language
   );
 }
 
 /**
- * Where `value` falls among `history`, as 0–100.
+ * Where `value` falls in the distribution of `history`, as 0–100.
  *
- * Strictly-less-than rank, so a clip tied with everything it is compared to
- * scores 0 rather than 50 — ties should not read as "average", they should read
- * as "not better than". With `history` empty this is 0, which is why every
- * caller gates on {@link MIN_HISTORY} first rather than relying on this.
+ * **Linear-interpolated ECDF, not a raw count.** A count is the obvious
+ * implementation and produces an unusable score at the history sizes this
+ * feature actually runs at: ranking against 5 priors, `below/n` can only be 0,
+ * 20, 40, 60, 80 or 100. The headline number could never read 72 until a creator
+ * had ~20 analyses, and every new upload would move it in 20-point steps.
+ *
+ * Interpolating between the two bracketing values gives a continuous score from
+ * the fifth analysis onward, and converges on the plain rank as history grows.
+ *
+ * Ties and degenerate history (every prior identical) return 50: a clip that
+ * matches everything it is compared against is exactly typical, which is what
+ * the middle of the range means. An earlier version returned 0 there, which read
+ * on screen as "worst" for a clip that was in fact average.
  */
 export function percentile(value: number, history: readonly number[]): number {
   if (history.length === 0) return 0;
-  const below = history.reduce((count, prior) => (prior < value ? count + 1 : count), 0);
-  return (below / history.length) * 100;
+
+  const sorted = [...history].sort((a, b) => a - b);
+  const lowest = sorted[0] as number;
+  const highest = sorted[sorted.length - 1] as number;
+
+  if (highest - lowest < Number.EPSILON) return value === lowest ? 50 : value > lowest ? 100 : 0;
+  if (value <= lowest) return 0;
+  if (value >= highest) return 100;
+
+  // Position on the 0..n-1 axis of sorted priors, interpolated within whichever
+  // pair brackets `value`, then rescaled to 0..100.
+  const upper = sorted.findIndex((prior) => prior > value);
+  const lower = upper - 1;
+  const span = (sorted[upper] as number) - (sorted[lower] as number);
+  const offset = span < Number.EPSILON ? 0 : (value - (sorted[lower] as number)) / span;
+  return ((lower + offset) / (sorted.length - 1)) * 100;
 }
 
 /**
@@ -139,8 +193,8 @@ export function scoreAnalysis(input: {
   const axisRows = AXIS_ORDER.map((entry, position) => ({
     axis: entry.axis,
     score: percentile(
-      bands[entry.band],
-      history.map((prior) => prior[entry.band]),
+      band(bands, entry.band),
+      history.map((prior) => band(prior, entry.band)),
     ),
     // A language-network score on a clip with no speech is measuring nothing.
     // The label is what tells the creator so — without it the bar looks like a

@@ -272,6 +272,7 @@ export async function generateRecommendations(
     // tips. `OFFERED_KINDS` is shared with the zod schema, so the one field most
     // likely to drift is defined once either way.
     output_config: {
+      effort: 'medium',
       format: {
         type: 'json_schema',
         schema: {

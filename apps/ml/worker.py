@@ -45,6 +45,7 @@ from queue_contract import (
     AnalysisStarted,
     AnalysisSucceeded,
     AxisBands,
+    AxisSummary,
     Stats,
     Timeline,
     TranscriptEntry,
@@ -195,11 +196,16 @@ def _transcript(result: dict) -> list[TranscriptEntry]:
 
 
 def _axis_bands(result: dict) -> Optional[AxisBands]:
-    """Clip-level activation per axis, or None if the parcellation produced nothing."""
-    means = result.get("axis_means")
-    if not means:
+    """Clip-level statistics per axis, or None if the parcellation produced nothing."""
+    summary = result.get("axis_means")
+    if not summary:
         return None
-    return AxisBands(**{axis: float(means.get(axis, 0.0)) for axis in AxisBands.model_fields})
+    return AxisBands(
+        **{
+            axis: AxisSummary(**summary.get(axis, {"mean": 0.0, "std": 0.0, "peak": 0.0}))
+            for axis in AxisBands.model_fields
+        }
+    )
 
 
 def _stats(result: dict) -> Stats:

@@ -199,13 +199,14 @@ async function onSucceeded(result: AnalysisSucceeded): Promise<void> {
 }
 
 /** Zeroed bands for a payload that predates the parcellation — scores to nulls anyway. */
-const EMPTY_BANDS = {
-  visual: 0,
-  audio: 0,
-  language: 0,
-  emotional: 0,
-  memorability: 0,
-} as const;
+const ZERO_SUMMARY = { mean: 0, std: 0, peak: 0 } as const;
+const EMPTY_BANDS: AxisBands = {
+  visual: ZERO_SUMMARY,
+  audio: ZERO_SUMMARY,
+  language: ZERO_SUMMARY,
+  emotional: ZERO_SUMMARY,
+  memorability: ZERO_SUMMARY,
+};
 
 /**
  * How many prior analyses a percentile is computed against.

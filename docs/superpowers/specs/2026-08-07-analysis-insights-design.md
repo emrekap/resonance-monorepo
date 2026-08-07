@@ -4,6 +4,14 @@
 **Scope:** `apps/ml`, `packages/queue`, `apps/worker`, `apps/api`, `apps/mobile`
 **Status:** implemented — see the as-built note below
 
+> **Two later corrections, both in `scoring.ts`.** The per-axis summary is no longer a bare `mean`:
+> `apps/ml` sends `{mean, std, peak}` and a named `BAND_SUMMARY` constant selects one (default
+> `peak`). A time-average of z-scored BOLD sits near zero by construction — the objection §0 of the
+> model-design doc raises against the brain-wide average applies within a network too. And
+> `percentile` interpolates rather than counting: against 5 priors a raw count yields only
+> 0/20/40/60/80/100, so the headline number could never read 72 until ~20 analyses. Neither changes
+> anything else below.
+>
 > **As built, one deviation from §Stage 1.** The atlas stores **Schaefer 2018 parcel ids** (`int16`,
 > 1–400) with their names, not 17 network ids, and `axis_map.py` matches on parcel-name prefixes.
 > The audio axis needs auditory cortex _specifically_ (`SomMotB_Aud` — Heschl's / STG); at the
@@ -208,7 +216,7 @@ roughly 8 KB. Well within Redis's comfort.
 
 ```ts
 composite(bands): number          // 0.40·visual + 0.35·audio + 0.25·language
-percentile(value, history): number  // strictly-less-than rank ÷ n × 100
+percentile(value, history): number  // linear-interpolated ECDF, 0..100
 confidence(priorCount, nSegments): number  // 0..1
 ```
 

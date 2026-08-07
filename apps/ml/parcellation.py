@@ -44,13 +44,58 @@ def axis_bands(preds: np.ndarray) -> np.ndarray:
     return bands
 
 
-def clip_means(bands: np.ndarray) -> dict[str, float]:
-    """Collapse the per-segment bands to one scalar per axis for the whole clip.
+#: Fraction of segments the `peak` statistic averages over.
+#: A quarter rather than the single highest segment: one TR of a 20 k-vertex
+#: prediction is noisy, and a clip should not out-rank another on one lucky
+#: frame.
+PEAK_FRACTION = 0.25
 
-    These are what `apps/worker` ranks against the creator's history. An empty
-    clip yields zeros rather than NaN — a NaN would propagate into a percentile
-    and land in the database as a null nobody could explain.
+
+def clip_summary(bands: np.ndarray) -> dict[str, dict[str, float]]:
+    """Collapse the per-segment bands to a few scalars per axis for the clip.
+
+    **Three statistics, not one, and deliberately.** `apps/worker` ranks one of
+    them against the creator's history to produce the score, and which one is the
+    right choice is an empirical question nobody has answered yet — there is no
+    calibration data. Sending all three makes that choice a one-line constant in
+    `scoring.ts` (`BAND_SUMMARY`) rather than a change to this file, the queue
+    contract and the ML deploy.
+
+    What each one means, and why `mean` alone was not enough:
+
+    ``mean``
+        Average response across the clip. TRIBE predicts *z-scored* BOLD, so this
+        sits near zero by construction — the same objection
+        `docs/resonance-model-design.md` §0 raises against the brain-wide
+        average, which is why it is no longer the only thing on the wire.
+        Within a network it is less degenerate than brain-wide, but it still
+        measures baseline more than content.
+    ``std``
+        How much the network's response *varied*. The design doc's own
+        "dynamism" proxy — a network being driven by the content swings; one
+        that is not, does not. Blind to whether the swing was up or down.
+    ``peak``
+        Mean of the top quarter of segments — how strongly the
+        network responded at its best moments. The closest of the three to "did
+        the hook land", and robust to a single noisy segment in a way `max` is
+        not.
+
+    An empty clip yields zeros rather than NaN: a NaN would propagate into a
+    percentile and land in the database as a null nobody could explain.
     """
     if bands.size == 0:
-        return {axis: 0.0 for axis in AXES}
-    return {axis: float(bands[:, index].mean()) for index, axis in enumerate(AXES)}
+        return {axis: {"mean": 0.0, "std": 0.0, "peak": 0.0} for axis in AXES}
+
+    n_peak = max(1, int(round(bands.shape[0] * PEAK_FRACTION)))
+
+    summary: dict[str, dict[str, float]] = {}
+    for index, axis in enumerate(AXES):
+        curve = bands[:, index]
+        # Partition rather than a full sort — only the top slice is needed.
+        top = np.partition(curve, -n_peak)[-n_peak:]
+        summary[axis] = {
+            "mean": float(curve.mean()),
+            "std": float(curve.std()),
+            "peak": float(top.mean()),
+        }
+    return summary

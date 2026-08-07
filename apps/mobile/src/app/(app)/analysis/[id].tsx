@@ -131,9 +131,6 @@ export default function AnalysisScreen() {
                   audio: result.timelineAudio,
                   language: result.timelineLanguage,
                 }}
-                markers={tips
-                  .filter((tip) => tip.targetStartSec != null)
-                  .map((tip) => ({ kind: 'dip' as const, startSec: tip.targetStartSec as number }))}
                 focusSec={focusSec}
               />
             </Card>

@@ -19,8 +19,11 @@ import { prismaService } from '@repo/db';
 import { AnalysisStatus } from '@repo/db/enums';
 import { RESULT_JOB } from '@repo/queue';
 import { handleResult } from '../src/results.ts';
+import { MIN_HISTORY } from '../src/scoring.ts';
 
-const ROUNDS = Number(process.env.ROUNDS ?? 10);
+// Enough rounds that the later ones clear MIN_HISTORY and actually score,
+// rather than only proving the writes do not deadlock.
+const ROUNDS = Number(process.env.ROUNDS ?? Math.max(10, MIN_HISTORY + 3));
 
 let passed = 0;
 const failures: string[] = [];
@@ -44,6 +47,25 @@ function reason(error: unknown): string {
 }
 
 const isDeadlock = (error: unknown) => /40P01|deadlock/i.test(reason(error));
+
+/**
+ * Bands that climb with the round, so each analysis out-ranks the last.
+ *
+ * The scoring path only engages once a workspace has {@link MIN_HISTORY} prior
+ * succeeded analyses, and it reads that history from `raw_stats.bands` — so a
+ * race that writes constant bands would exercise the writes without ever
+ * exercising the ranking.
+ */
+function bandsFor(round: number) {
+  const summary = (base: number) => ({ mean: base, std: 1 + base, peak: 2 + base });
+  return {
+    visual: summary(round),
+    audio: summary(round + 0.5),
+    language: summary(round + 0.25),
+    emotional: summary(round + 0.75),
+    memorability: summary(round + 0.1),
+  };
+}
 
 const asset = await prismaService.mediaAsset.findFirst({
   select: { id: true, workspaceId: true },
@@ -92,7 +114,22 @@ async function race(
           startedAt,
           finishedAt,
           durationMs: 1_000,
-          timeline: { startSec: [0, 1.49], attention: [0.1, 0.2] },
+          // All five arrays, so `timelineColumns` accepts the row and the write
+          // exercises the length constraint rather than falling back to
+          // raw_stats. A two-segment timeline is the shortest that does.
+          timeline: {
+            startSec: [0, 1.49],
+            attention: [0.1, 0.2],
+            visual: [0.3, 0.4],
+            audio: [0.5, 0.6],
+            language: [0.7, 0.8],
+          },
+          durationSec: 2.98,
+          transcript: [
+            { startSec: 0, text: 'concurrency probe' },
+            { startSec: 1.49, text: '' },
+          ],
+          axisBands: bandsFor(round),
           stats: {
             globalMean: 0,
             globalStd: 1,
@@ -134,7 +171,17 @@ async function race(
     select: {
       status: true,
       completedAt: true,
-      result: { select: { analysisId: true } },
+      result: {
+        select: {
+          analysisId: true,
+          rawStats: true,
+          resonanceScore: true,
+          percentileInChannel: true,
+          timelineStartSec: true,
+          timelineVisual: true,
+          axisScores: { select: { axis: true, position: true } },
+        },
+      },
       inferenceRuns: { select: { finishedAt: true } },
     },
   });
@@ -151,9 +198,53 @@ async function race(
     row.inferenceRuns.length === 1 && !!row.inferenceRuns[0]?.finishedAt,
     `${row.inferenceRuns.length} run(s)`,
   );
+
+  if (outcome !== 'succeeded') return;
+
+  // The five arrays must land together — the length constraint rejects the row
+  // otherwise, and it would do so on every retry.
+  check(
+    `${label}: timeline written`,
+    row.result?.timelineStartSec.length === 2 && row.result.timelineVisual.length === 2,
+    `${row.result?.timelineStartSec.length ?? 0} / ${row.result?.timelineVisual.length ?? 0}`,
+  );
+
+  // Every future percentile in this workspace is ranked against these.
+  const bands = (row.result?.rawStats as { bands?: Record<string, unknown> } | null)?.bands;
+  check(`${label}: raw_stats.bands persisted`, !!bands && Object.keys(bands).length === 5);
+
+  // A redelivery must overwrite the five rows, never append a sixth.
+  const axes = row.result?.axisScores ?? [];
+  check(
+    `${label}: axis rows are 5 or 0, never duplicated`,
+    axes.length === 5 || axes.length === 0,
+    `${axes.length} row(s)`,
+  );
+  if (axes.length === 5) {
+    check(
+      `${label}: axis positions are 0..4 exactly once`,
+      new Set(axes.map((axis) => axis.position)).size === 5,
+    );
+  }
+
+  // Scoring engages only above MIN_HISTORY; below it both must be null together,
+  // never one without the other.
+  const scored = row.result?.resonanceScore !== null;
+  check(
+    `${label}: score and percentile agree on presence`,
+    scored === (row.result?.percentileInChannel !== null),
+  );
+  check(
+    `${label}: axis rows present iff scored`,
+    scored === (axes.length === 5),
+    `scored=${scored} axes=${axes.length}`,
+  );
 }
 
-console.log(`\nracing started × succeeded and started × failed, ${ROUNDS} rounds each`);
+console.log(
+  `\nracing started × succeeded and started × failed, ${ROUNDS} rounds each` +
+    ` (rounds 1..${MIN_HISTORY} build the history scoring needs)`,
+);
 
 try {
   for (let round = 1; round <= ROUNDS; round++) {

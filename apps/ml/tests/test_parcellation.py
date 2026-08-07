@@ -112,15 +112,63 @@ class TestAxisBands:
             parcellation.axis_bands(np.zeros(EXPECTED_VERTICES))
 
 
-class TestClipMeans:
-    def test_averages_each_axis_over_time(self):
+class TestClipSummary:
+    def test_reports_all_three_statistics_for_every_axis(self):
+        summary = parcellation.clip_summary(np.zeros((8, len(AXES))))
+        assert set(summary) == set(AXES)
+        for stats in summary.values():
+            assert set(stats) == {"mean", "std", "peak"}
+
+    def test_mean_averages_over_time(self):
         bands = np.array([[0.0, 10.0, 0.0, 0.0, 0.0], [2.0, 20.0, 0.0, 0.0, 0.0]])
-        means = parcellation.clip_means(bands)
-        assert means["visual"] == pytest.approx(1.0)
-        assert means["audio"] == pytest.approx(15.0)
+        summary = parcellation.clip_summary(bands)
+        assert summary["visual"]["mean"] == pytest.approx(1.0)
+        assert summary["audio"]["mean"] == pytest.approx(15.0)
+
+    def test_std_measures_variation_not_level(self):
+        """The distinction that makes `std` worth carrying separately.
+
+        A flat-but-high curve and a flat-but-low one are equally undifferentiated;
+        only `mean` should tell them apart.
+        """
+        flat_low = np.zeros((8, len(AXES)))
+        flat_high = np.full((8, len(AXES)), 5.0)
+        assert parcellation.clip_summary(flat_low)["visual"]["std"] == pytest.approx(0.0)
+        assert parcellation.clip_summary(flat_high)["visual"]["std"] == pytest.approx(0.0)
+        assert parcellation.clip_summary(flat_high)["visual"]["mean"] == pytest.approx(5.0)
+
+    def test_peak_averages_the_top_quarter(self):
+        curve = np.zeros((8, len(AXES)))
+        curve[:, 0] = [0, 0, 0, 0, 0, 0, 10, 20]  # top quarter of 8 is 2 segments
+        summary = parcellation.clip_summary(curve)
+        assert summary["visual"]["peak"] == pytest.approx(15.0)
+        assert summary["visual"]["mean"] == pytest.approx(30 / 8)
+
+    def test_peak_is_robust_to_one_outlier_segment(self):
+        """Why `peak` is a top-quartile mean and not `max`.
+
+        A single lucky segment should not let a clip out-rank a consistently
+        stronger one.
+        """
+        spike = np.zeros((8, len(AXES)))
+        spike[:, 0] = [0, 0, 0, 0, 0, 0, 0, 100]
+        steady = np.zeros((8, len(AXES)))
+        steady[:, 0] = [8, 8, 8, 8, 8, 8, 8, 8]
+        assert spike[:, 0].max() > steady[:, 0].max()
+        # …but the top-quartile mean is not fooled by the single frame.
+        assert (
+            parcellation.clip_summary(spike)["visual"]["peak"]
+            < parcellation.clip_summary(steady)["visual"]["peak"] * 7
+        )
+
+    def test_peak_never_averages_zero_segments(self):
+        """A clip too short for a quarter to be a whole segment still reports one."""
+        summary = parcellation.clip_summary(np.ones((1, len(AXES))))
+        assert summary["visual"]["peak"] == pytest.approx(1.0)
 
     def test_an_empty_clip_is_zero_not_nan(self):
         """A NaN here would become a null percentile nobody could explain."""
-        means = parcellation.clip_means(np.empty((0, len(AXES))))
-        assert set(means) == set(AXES)
-        assert all(value == 0.0 for value in means.values())
+        summary = parcellation.clip_summary(np.empty((0, len(AXES))))
+        assert set(summary) == set(AXES)
+        for stats in summary.values():
+            assert all(value == 0.0 for value in stats.values())
