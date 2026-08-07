@@ -13,6 +13,7 @@ jobs:
   ml:
     name: apps/ml (pytest)
     runs-on: ubuntu-latest
+    environment: test
     defaults:
       run:
         working-directory: apps/ml
