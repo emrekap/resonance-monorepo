@@ -4,7 +4,7 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**", "src/generated/**"],
-      "passThroughEnv": ["TEST_DIRECT_DATABASE_URL"]
+      "passThroughEnv": ["DIRECT_DATABASE_URL"]
     },
     "dev": {
       "cache": false,
