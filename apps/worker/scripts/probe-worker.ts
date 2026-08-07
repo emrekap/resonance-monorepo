@@ -11,6 +11,8 @@ const worker = new Worker('probe-results', handleResult, {
 });
 
 worker.on('completed', (job) => console.log(`PROBE ok   ${job.name} ${job.id}`));
-worker.on('failed', (job, error) => console.log(`PROBE FAIL ${job?.name} ${job?.id}: ${error.message}`));
+worker.on('failed', (job, error) =>
+  console.log(`PROBE FAIL ${job?.name} ${job?.id}: ${error.message}`),
+);
 
 console.log('probe worker up');

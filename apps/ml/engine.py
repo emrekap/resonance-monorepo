@@ -20,6 +20,9 @@ from pathlib import Path
 
 import numpy as np
 
+import parcellation
+from parcellation import AXES  # noqa: F401 — re-exported for callers of this module
+
 logger = logging.getLogger(__name__)
 
 
@@ -221,6 +224,45 @@ def is_loaded() -> bool:
     return MODEL is not None
 
 
+def segment_text(segment) -> str:
+    """The words spoken during one segment, joined in time order.
+
+    whisperx transcription already ran as part of building the events dataframe,
+    so the transcript is sitting on each segment as ``Word`` / ``Sentence``
+    events — it costs nothing to read and is what lets the insight step say *why*
+    attention moved rather than only *when*.
+
+    Segments with no speech return ``""`` rather than being dropped: the
+    transcript stays row-aligned with the attention curve, which is the entire
+    reason it is worth carrying.
+    """
+    try:
+        events = list(segment.ns_events)
+    except Exception:
+        return ""
+
+    spoken = []
+    for event in events:
+        text = getattr(event, "text", None)
+        if not isinstance(text, str) or not text.strip():
+            continue
+        # `Word` carries a `sentence` attribute, `Sentence` does not. Prefer word
+        # events so the text lands in the segment it was actually spoken in;
+        # taking both would duplicate every sentence across its own words.
+        if type(event).__name__ == "Word":
+            spoken.append((float(getattr(event, "start", 0.0)), text.strip()))
+
+    if not spoken:
+        # No word-level events — fall back to sentence-level, which is coarser
+        # but better than reporting the clip as silent.
+        for event in events:
+            text = getattr(event, "text", None)
+            if isinstance(text, str) and text.strip():
+                spoken.append((float(getattr(event, "start", 0.0)), text.strip()))
+
+    return " ".join(text for _, text in sorted(spoken))
+
+
 def predictions_to_dict(preds: np.ndarray, segments: list) -> dict:
     """Serialise the (n_segments × n_vertices) prediction array to JSON.
 
@@ -240,8 +282,13 @@ def predictions_to_dict(preds: np.ndarray, segments: list) -> dict:
                 "stop": float(getattr(seg, "stop", 0.0)),
                 "duration": float(getattr(seg, "duration", 0.0)),
                 "n_events": n_events,
+                "text": segment_text(seg),
             }
         )
+
+    # The per-network reduction — the part a creator is actually shown. Kept
+    # separate from the brain-wide means below, which stay dev telemetry.
+    bands = parcellation.axis_bands(preds)
 
     return {
         "shape": list(preds.shape),
@@ -251,6 +298,13 @@ def predictions_to_dict(preds: np.ndarray, segments: list) -> dict:
         "mean_activation_per_vertex": preds.mean(axis=0).tolist(),
         # Per-timestep mean activation across vertices
         "mean_activation_per_timestep": preds.mean(axis=1).tolist(),
+        # Per-segment activation within each product axis, in AXES order.
+        "axis_timeline": {
+            axis: bands[:, index].tolist() for index, axis in enumerate(parcellation.AXES)
+        },
+        # One scalar per axis for the whole clip — what apps/worker ranks.
+        "axis_means": parcellation.clip_means(bands),
+        "duration_sec": max((meta["stop"] for meta in seg_meta), default=0.0),
         "stats": {
             "global_mean": float(preds.mean()),
             "global_std": float(preds.std()),

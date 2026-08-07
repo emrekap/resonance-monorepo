@@ -1,6 +1,7 @@
 import { Worker } from 'bullmq';
 import { prismaService } from '@repo/db';
 import { ANALYSIS_RESULTS_QUEUE, QUEUE_PREFIX, createRedisConnection, redisUrl } from '@repo/queue';
+import { insightsEnabled } from './insights';
 import { handleResult } from './results';
 
 /**
@@ -42,6 +43,16 @@ worker.on('error', (error) => {
 console.log(
   `👷 resonance-worker consuming "${QUEUE_PREFIX}:${ANALYSIS_RESULTS_QUEUE}" on ${redisUrl()}`,
 );
+
+// Said once at boot rather than per job: without a key every analysis still
+// gets its score, axes and timeline, and only the "do this" notes are missing.
+// A per-job warning would bury that in the log; silence would make a
+// permanently empty section look like a bug in the model.
+if (!insightsEnabled()) {
+  console.warn(
+    '[results] ANTHROPIC_API_KEY is unset — analyses will be scored but will carry no recommendations.',
+  );
+}
 
 /**
  * Drain before exiting. `worker.close()` waits for in-flight handlers to finish

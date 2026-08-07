@@ -36,7 +36,36 @@ export const getAnalysisById = new Hono<AuthEnv>().get(
           startedAt: true,
           completedAt: true,
           mediaAsset: { select: { id: true, kind: true, storageBucket: true, storagePath: true } },
-          result: { select: { resonanceScore: true, percentileInChannel: true, confidence: true } },
+          result: {
+            select: {
+              resonanceScore: true,
+              percentileInChannel: true,
+              confidence: true,
+              // The five parallel arrays are always read whole — the length
+              // constraint on the table guarantees they agree, so the client can
+              // zip them by index without checking.
+              timelineStartSec: true,
+              timelineAttention: true,
+              timelineVisual: true,
+              timelineAudio: true,
+              timelineLanguage: true,
+              // Ordered here rather than on the client: `position` and `priority`
+              // exist precisely so the reading order is the server's decision.
+              axisScores: {
+                select: { axis: true, score: true, confidence: true },
+                orderBy: { position: 'asc' },
+              },
+              recommendations: {
+                select: {
+                  kind: true,
+                  message: true,
+                  targetStartSec: true,
+                  targetStopSec: true,
+                },
+                orderBy: { priority: 'asc' },
+              },
+            },
+          },
         },
       }),
     );

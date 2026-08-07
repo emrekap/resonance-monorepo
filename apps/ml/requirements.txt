@@ -60,3 +60,10 @@ bullmq==3.0.3
 # ── Optional brain visualisation (uncomment if needed) ───────────────────────
 # nilearn>=0.10
 # pyvista>=0.43
+
+# ── Dev only — NOT needed to run the worker or the API ───────────────────────
+# The cortical atlas is committed (atlas/*.npz), so runtime reads it with numpy
+# alone. nibabel is only for regenerating it from the FreeSurfer annotations:
+#   pip install nibabel && python scripts/build_atlas.py
+# nibabel>=5.0
+# pytest>=8.0        # pytest tests/

@@ -121,14 +121,16 @@ export type AnalysisStarted = z.infer<typeof analysisStartedSchema>;
 /**
  * The per-segment timeline.
  *
- * `startSec` and `attention` are what TRIBE gives us directly. The three
- * modality bands need a Yeo-7 parcellation of the ~20 k fsaverage5 vertices
- * (see `docs/resonance-model-design.md` §1a), which does not exist yet — so
- * they are optional, and `apps/worker` writes the timeline only when all five
- * arrays are present. That is not politeness: `analysis_results` carries
- * `analysis_results_timeline_len_chk`, which requires the five arrays to be
- * equal-length or all empty, so a partial timeline would be rejected by
- * Postgres. Nothing here changes when the parcellation lands.
+ * `startSec` and `attention` are what TRIBE gives us directly; the three
+ * modality bands come from parcellating the ~20 k fsaverage5 vertices into
+ * cortical networks (`apps/ml/atlas`, and `docs/resonance-model-design.md` §1a).
+ *
+ * The bands stay `.nullish()` even though `apps/ml` now always sends them, for
+ * two reasons: a worker deployed ahead of the ml image must not reject every
+ * job, and `analysis_results_timeline_len_chk` requires the five arrays to be
+ * equal-length **or all empty** — so `apps/worker` still writes the timeline
+ * only when all five are present, rather than handing Postgres a partial row it
+ * would reject on every retry.
  */
 export const timelineSchema = z.object({
   startSec: z.array(z.number()),
@@ -139,12 +141,49 @@ export const timelineSchema = z.object({
 });
 export type Timeline = z.infer<typeof timelineSchema>;
 
+/**
+ * Clip-level activation per product axis, in `analysis_axis_scores.position`
+ * order.
+ *
+ * These are raw z-scored BOLD means, not scores — they are never rendered.
+ * `apps/worker` ranks them against the same workspace's prior analyses to get
+ * the 0–100 a creator sees, which is why the raw value has to cross the queue
+ * rather than being reduced here: a percentile needs the *history*, and
+ * `apps/ml` has no database.
+ */
+export const axisBandsSchema = z.object({
+  visual: z.number(),
+  audio: z.number(),
+  language: z.number(),
+  emotional: z.number(),
+  memorability: z.number(),
+});
+export type AxisBands = z.infer<typeof axisBandsSchema>;
+
+/**
+ * The transcript, one entry per segment, row-aligned with {@link timelineSchema}.
+ *
+ * Segments with no speech carry an empty `text` rather than being omitted — the
+ * alignment with the attention curve is the point. An all-empty transcript is
+ * how `apps/worker` knows the clip has no speech and downgrades the CLARITY
+ * axis to BETA.
+ */
+export const transcriptEntrySchema = z.object({
+  startSec: z.number(),
+  text: z.string(),
+});
+export type TranscriptEntry = z.infer<typeof transcriptEntrySchema>;
+
 export const analysisSucceededSchema = z.object({
   ...runIdentity,
   startedAt: z.iso.datetime(),
   finishedAt: z.iso.datetime(),
   durationMs: z.int().min(0),
   timeline: timelineSchema,
+  /** Media length in seconds — bounds every recommendation timestamp. */
+  durationSec: z.number().min(0).nullish(),
+  transcript: z.array(transcriptEntrySchema).nullish(),
+  axisBands: axisBandsSchema.nullish(),
   /**
    * Dev telemetry only — lands in `analysis_results.raw_stats`, never rendered
    * to a creator. `globalMean` is near zero by construction (the model predicts

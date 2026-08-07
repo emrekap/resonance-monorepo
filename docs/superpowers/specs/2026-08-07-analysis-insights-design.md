@@ -2,7 +2,16 @@
 
 **Date:** 2026-08-07
 **Scope:** `apps/ml`, `packages/queue`, `apps/worker`, `apps/api`, `apps/mobile`
-**Status:** design approved, ready for implementation planning
+**Status:** implemented — see the as-built note below
+
+> **As built, one deviation from §Stage 1.** The atlas stores **Schaefer 2018 parcel ids** (`int16`,
+> 1–400) with their names, not 17 network ids, and `axis_map.py` matches on parcel-name prefixes.
+> The audio axis needs auditory cortex _specifically_ (`SomMotB_Aud` — Heschl's / STG); at the
+> 17-network level that parcel is inside SomMotB alongside hand and foot motor cortex, so a
+> network-id atlas could not express the mapping this spec's own table asks for. Storing parcel ids
+> also keeps the axis mapping a code review rather than a regenerated binary. Everything else below
+> is as built. Source resolved to Schaefer 2018 (the fallback named under §Risks), for the same
+> reason plus its parcel names carrying their network assignment inline.
 
 ## Problem
 

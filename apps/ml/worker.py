@@ -27,6 +27,7 @@ import signal
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 from urllib.parse import unquote, urlparse
 
 from bullmq import Queue, UnrecoverableError, Worker
@@ -43,8 +44,10 @@ from queue_contract import (
     AnalysisJob,
     AnalysisStarted,
     AnalysisSucceeded,
+    AxisBands,
     Stats,
     Timeline,
+    TranscriptEntry,
     iso,
     now_iso,
 )
@@ -150,27 +153,53 @@ def _download(url: str, directory: Path, modality: str) -> Path:
 
 
 def _timeline(result: dict) -> Timeline:
-    """The per-segment attention curve, from what `predictions_to_dict` returns.
+    """The per-segment curves, from what `predictions_to_dict` returns.
 
-    `mean_activation_per_timestep` is row-aligned with `segments`, but only when
-    both survived the same filtering — truncate to the shorter rather than pair
-    an activation with someone else's timestamp.
+    `mean_activation_per_timestep` and each band are row-aligned with `segments`,
+    but only when they all survived the same filtering — truncate every array to
+    the shortest rather than pair an activation with someone else's timestamp.
+
+    All five arrays are truncated together on purpose:
+    `analysis_results_timeline_len_chk` rejects a row whose arrays disagree, and
+    it would do so on every retry.
     """
     attention = [float(value) for value in result.get(
         "mean_activation_per_timestep", [])]
     starts = [float(segment["start"])
               for segment in result.get("segments", [])]
 
-    if len(starts) != len(attention):
-        logger.warning(
-            f"segments ({len(starts)}) and timesteps ({len(attention)}) disagree — "
-            "truncating the timeline to the shorter of the two."
-        )
-        length = min(len(starts), len(attention))
-        starts, attention = starts[:length], attention[:length]
+    axis_timeline = result.get("axis_timeline") or {}
+    bands = {
+        axis: [float(value) for value in axis_timeline.get(axis, [])]
+        for axis in ("visual", "audio", "language")
+    }
 
-    # visual / audio / language stay unset until the Yeo-7 parcellation exists.
-    return Timeline(startSec=starts, attention=attention)
+    lengths = [len(starts), len(attention), *(len(curve) for curve in bands.values())]
+    if len(set(lengths)) > 1:
+        logger.warning(
+            f"timeline arrays disagree in length ({lengths}) — truncating to the shortest."
+        )
+        length = min(lengths)
+        starts, attention = starts[:length], attention[:length]
+        bands = {axis: curve[:length] for axis, curve in bands.items()}
+
+    return Timeline(startSec=starts, attention=attention, **bands)
+
+
+def _transcript(result: dict) -> list[TranscriptEntry]:
+    """One entry per segment, silent ones included, so it stays row-aligned."""
+    return [
+        TranscriptEntry(startSec=float(segment["start"]), text=segment.get("text", ""))
+        for segment in result.get("segments", [])
+    ]
+
+
+def _axis_bands(result: dict) -> Optional[AxisBands]:
+    """Clip-level activation per axis, or None if the parcellation produced nothing."""
+    means = result.get("axis_means")
+    if not means:
+        return None
+    return AxisBands(**{axis: float(means.get(axis, 0.0)) for axis in AxisBands.model_fields})
 
 
 def _stats(result: dict) -> Stats:
@@ -306,6 +335,9 @@ class AnalysisProcessor:
                 finishedAt=iso(finished_at),
                 durationMs=duration_ms,
                 timeline=_timeline(result),
+                durationSec=float(result.get("duration_sec", 0.0)),
+                transcript=_transcript(result),
+                axisBands=_axis_bands(result),
                 stats=_stats(result),
             ),
             analysis_id,

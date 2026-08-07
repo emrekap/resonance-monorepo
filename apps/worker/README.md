@@ -28,11 +28,18 @@ throughput, which is a small fraction of it.
 
 ```text
 src/
-  index.ts     # boots the Worker, logs, drains on SIGINT/SIGTERM
-  results.ts   # the handlers — one per job name, all idempotent
+  index.ts       # boots the Worker, logs, drains on SIGINT/SIGTERM
+  results.ts     # the handlers — one per job name, all idempotent
+  scoring.ts     # bands → percentile, confidence, axis rows (pure)
+  insights.ts    # bands + transcript → recommendations, via Claude (best-effort)
 scripts/
   test-concurrency.ts   # races two events for one analysis against a real database
 ```
+
+`analysis.succeeded` runs in two phases. The first transaction writes everything deterministic and
+flips the analysis SUCCEEDED; the second writes the recommendations after the model answers. The
+split is what lets the screen be useful immediately and the tips arrive late — or never, without
+taking the analysis down with them.
 
 ## The three job names
 
@@ -80,17 +87,64 @@ producer — `ML_RESULT_ATTEMPTS` (default 5) in `apps/ml/worker.py`. Without it
 single attempt, and any transient Postgres error discarded the outcome of a GPU run that cannot be
 recomputed, stranding the analysis in PROCESSING.
 
-## Not written yet
+## Scoring — `scoring.ts`
 
-`resonanceScore`, `percentileInChannel` and `confidence` are left **null** on purpose — the absolute
-0–100 only ships once calibration is validated (see [`docs/resonance-model-design.md`](../../docs/resonance-model-design.md)),
-and nothing in this pipeline computes it. A placeholder number would read as a real one.
+`apps/ml` sends raw per-network activations; this turns them into the numbers a creator sees. Pure,
+deterministic, and unit-tested: the same clip against the same history scores the same every time,
+which is the property that makes the number arguable at all.
 
-The timeline columns are written only when all five parallel arrays arrive.
-`analysis_results_timeline_len_chk` requires them equal-length or all empty, and the
-visual/audio/language bands need a Yeo-7 parcellation of the fsaverage5 vertices that `apps/ml` does
-not do yet. Until then the real attention curve rides along in `raw_stats` rather than being
-discarded.
+**The score is a rank against the creator's own history, never an absolute.** TRIBE outputs z-scored
+BOLD, and there is no validated mapping from that onto engagement — inventing one produces a number
+that reads as real. Ranking a clip against the same creator's other clips needs no such mapping, and
+it is also the statistically correct framing, because the creator is the confounder you have to
+condition on ([`docs/resonance-model-design.md`](../../docs/resonance-model-design.md) §2b).
+
+| Column                  | How                                                                                                                              |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `percentile_in_channel` | strictly-less-than rank of this clip's weighted composite among the workspace's prior succeeded analyses                         |
+| `resonance_score`       | the same number, rounded — "72" and "top 28%" are two presentations of one rank, not two measurements                            |
+| `confidence`            | `min(1, priors/20) × min(1, segments/20)` — a rank needs both a deep history _and_ a clip long enough for its means to be stable |
+| `analysis_axis_scores`  | five rows, each the same rank computed on that axis's own band                                                                   |
+
+Only visual, audio and language are weighted into the composite (0.40 / 0.35 / 0.25). EMOTIONAL_PULL
+and MEMORABILITY are cortical shadows of subcortical structures that fsaverage5 does not contain, so
+they get a score and a `BETA` label but no influence on the headline number. CLARITY drops to `BETA`
+when the transcript is empty — a language-network score on a music clip measures nothing, and the
+label is what says so.
+
+**Cold start:** below **5** prior analyses, the score, percentile, confidence and _all five axis
+rows_ are omitted. Both the number and the bars are ranks against a history that does not exist yet;
+the timeline and the recommendations are about the clip alone and carry the screen until then.
+Writing axis rows with a sentinel `0` was the alternative and is worse — a zero-length bar labelled
+"Visual attention" reads as _bad_, not as _unknown_.
+
+The raw bands live in `raw_stats.bands`, which is what every future percentile in the workspace is
+computed against. Rows written before this existed simply sit out the ranking, so no backfill is
+needed.
+
+## Insights — `insights.ts`
+
+The one non-deterministic step. Claude is given the scores, the curves, the **already-located** peaks
+and dips, and the transcript, and writes `analysis_recommendations`. It computes nothing — that split
+is what makes the output checkable, since a hallucinated timestamp is caught by comparing it against
+the curve while a hallucinated score would be caught by nothing.
+
+Everything returned is treated as untrusted: parsed against a schema, range-checked against the
+clip's own duration, truncated, deduped, capped at four, and re-prioritised from array order.
+`POSTING_TIME` is absent from the enum the model may choose from — nothing here knows when a creator
+posts, and an available enum value is an invitation to guess.
+
+It runs **after** the first transaction commits, so the screen is useful the moment the analysis
+flips SUCCEEDED and the tips arrive a beat later over the realtime channel. It **never throws**: a
+failure logs, records `raw_stats.insights`, and returns. Failing the job would retry the whole
+handler and re-bill the call because a copywriting request had a bad minute.
+
+Needs `ANTHROPIC_API_KEY`. Without it the stage is skipped with one warning at boot and analyses are
+still fully scored — only the tips are missing. Roughly $0.03 per analysis.
+
+```bash
+bun test    # scoring + insight validation, no network
+```
 
 ## Run it
 

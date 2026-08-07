@@ -74,10 +74,11 @@ class AnalysisJob(BaseModel):
 class Timeline(BaseModel):
     """Per-segment curves.
 
-    `visual` / `audio` / `language` need a Yeo-7 parcellation of the fsaverage5
-    vertices, which is not built yet — they stay None, and `apps/worker` keeps
-    the timeline in `raw_stats` until all five arrays exist. Sending three of
-    five would be rejected by `analysis_results_timeline_len_chk`.
+    `visual` / `audio` / `language` come from parcellating the fsaverage5
+    vertices into cortical networks (`atlas/axis_map.py`). They stay Optional so
+    a worker deployed ahead of this image still validates, and because
+    `analysis_results_timeline_len_chk` requires all five arrays equal-length or
+    all empty — `apps/worker` writes the timeline only when all five arrived.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -87,6 +88,38 @@ class Timeline(BaseModel):
     visual: Optional[list[float]] = None
     audio: Optional[list[float]] = None
     language: Optional[list[float]] = None
+
+
+class AxisBands(BaseModel):
+    """Clip-level activation per product axis, in `analysis_axis_scores.position` order.
+
+    Raw z-scored BOLD means, never rendered. `apps/worker` ranks them against the
+    workspace's prior analyses to produce the 0-100 a creator sees — the raw
+    value has to cross the queue because a percentile needs history, and this
+    process has no database.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    visual: float
+    audio: float
+    language: float
+    emotional: float
+    memorability: float
+
+
+class TranscriptEntry(BaseModel):
+    """One segment's speech, row-aligned with `Timeline`.
+
+    Silent segments carry an empty string rather than being dropped — the
+    alignment with the attention curve is the point, and an all-empty transcript
+    is how `apps/worker` knows to downgrade the CLARITY axis to BETA.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    startSec: float
+    text: str
 
 
 class Stats(BaseModel):
@@ -123,6 +156,9 @@ class AnalysisSucceeded(BaseModel):
     finishedAt: str
     durationMs: int = Field(ge=0)
     timeline: Timeline
+    durationSec: Optional[float] = Field(default=None, ge=0)
+    transcript: Optional[list[TranscriptEntry]] = None
+    axisBands: Optional[AxisBands] = None
     stats: Stats
 
 

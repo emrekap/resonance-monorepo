@@ -27,6 +27,9 @@ colors:
     onAccent: '#FFFFFF'
     bandTrack: '#1F1E26'
     bandNeutral: '#3B3B47'
+    bandVisual: '#8B72FF'
+    bandAudio: '#3DD9C4'
+    bandLanguage: '#FFA94D'
     success: '#4ADE80'
     warning: '#FBBF24'
     danger: '#FF6369'
@@ -48,6 +51,9 @@ colors:
     onAccent: '#FFFFFF'
     bandTrack: '#E7E5F0'
     bandNeutral: '#C6C3D4'
+    bandVisual: '#6338E8'
+    bandAudio: '#0F766E'
+    bandLanguage: '#B45309'
     success: '#15803D'
     warning: '#B45309'
     danger: '#DC2626'
@@ -142,8 +148,16 @@ and the bloom. Everything else is a graded neutral.
 
 That restraint is a product constraint, not a taste: Resonance screens always sit
 next to the creator's own thumbnails, and a high-chroma palette loses that fight.
-Seven categorical hues across the Yeo networks would also imply seven categories
-a creator has to learn, whereas one lit band says _this one fired_.
+Seventeen categorical hues across the cortical networks would also imply
+seventeen categories a creator has to learn, whereas one lit band says
+_this one fired_.
+
+The attention timeline is the deliberate exception, and the smallest one that
+works. Three curves are drawn at once and cross constantly, so they cannot be
+told apart by lightness — `bandVisual`, `bandAudio` and `bandLanguage` are
+three hues rather than three tints. Three is the count the product actually
+needs; the other fourteen networks stay folded into the five axes and never get
+a colour. Everywhere else, one violet still means _this one fired_.
 
 ## Accessibility
 
@@ -151,6 +165,11 @@ Every foreground clears WCAG AA against its canvas except `textMuted`, which
 measures 3.2:1 in light mode and is restricted to large text, disabled states and
 decorative labels. The `Text` primitive enforces this in its type signature, and
 `src/design/tokens.test.ts` fails if a palette edit breaks any of the ratios.
+
+The three band colours are non-text graphics, so they are held to 3:1 against the
+canvas rather than 4.5:1 — and additionally to 60° of hue separation from one
+another, since that, not contrast, is what keeps three overlapping lines legible.
+Both are asserted in the same test file.
 
 ## Do not hand-edit
 

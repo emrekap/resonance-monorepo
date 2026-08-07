@@ -6,11 +6,15 @@ import {
   analysisFailedSchema,
   analysisStartedSchema,
   analysisSucceededSchema,
+  axisBandsSchema,
   type AnalysisFailed,
   type AnalysisStarted,
   type AnalysisSucceeded,
+  type AxisBands,
   type Timeline,
 } from '@repo/queue';
+import { generateRecommendations, insightsEnabled } from './insights';
+import { scoreAnalysis } from './scoring';
 
 /**
  * The `analysis-results` consumer: turns what `apps/ml` reports into rows.
@@ -98,14 +102,7 @@ async function onSucceeded(result: AnalysisSucceeded): Promise<void> {
   const startedAt = new Date(result.startedAt);
   const finishedAt = new Date(result.finishedAt);
   const timeline = timelineColumns(result.timeline);
-
-  const rawStats: Prisma.InputJsonObject = {
-    ...result.stats,
-    // Keep the real per-segment attention curve even when it cannot go in the
-    // timeline columns yet (see timelineColumns) — recomputing it means another
-    // GPU run.
-    ...(timeline ? {} : { timeline: { ...result.timeline } }),
-  };
+  const bands = result.axisBands ?? null;
 
   await prismaService.$transaction(async (tx) => {
     await lockAnalysis(tx, result.analysisId);
@@ -131,15 +128,58 @@ async function onSucceeded(result: AnalysisSucceeded): Promise<void> {
       },
     });
 
-    // `resonanceScore`, `percentileInChannel` and `confidence` stay null on
-    // purpose: the absolute 0–100 only ships once calibration is validated
-    // (docs/resonance-model-design.md), and nothing in this pipeline computes
-    // it yet. A placeholder number would read as a real one.
+    // History is read *before* this analysis's own bands are written, or the
+    // clip would be ranked against itself. The `not` on the id is belt and
+    // braces for a redelivery, where the row already exists from attempt 1.
+    const history = bands ? await workspaceHistory(tx, result.analysisId) : [];
+
+    const scored = scoreAnalysis({
+      bands: bands ?? EMPTY_BANDS,
+      history,
+      nSegments: result.timeline.startSec.length,
+      hasSpeech: (result.transcript ?? []).some((entry) => entry.text.trim().length > 0),
+    });
+
+    const rawStats: Prisma.InputJsonObject = {
+      ...result.stats,
+      // The raw per-axis activations every future percentile in this workspace
+      // is computed against. Kept here rather than in columns because they are
+      // never queried individually — only read back as a set.
+      ...(bands ? { bands: { ...bands } } : {}),
+      // Keep the real per-segment attention curve even when it cannot go in the
+      // timeline columns yet (see timelineColumns) — recomputing it means another
+      // GPU run.
+      ...(timeline ? {} : { timeline: { ...result.timeline } }),
+    };
+
     await tx.analysisResult.upsert({
       where: { analysisId: result.analysisId },
-      create: { analysisId: result.analysisId, rawStats, ...timelineData(timeline) },
-      update: { rawStats, ...timelineData(timeline) },
+      create: {
+        analysisId: result.analysisId,
+        rawStats,
+        ...timelineData(timeline),
+        resonanceScore: scored.resonanceScore,
+        percentileInChannel: scored.percentileInChannel,
+        confidence: scored.confidence,
+      },
+      update: {
+        rawStats,
+        ...timelineData(timeline),
+        resonanceScore: scored.resonanceScore,
+        percentileInChannel: scored.percentileInChannel,
+        confidence: scored.confidence,
+      },
     });
+
+    // Upserted on (analysisId, axis) so a redelivery overwrites rather than
+    // duplicating. No rows at all below MIN_HISTORY — see scoreAnalysis.
+    for (const row of scored.axisRows) {
+      await tx.analysisAxisScore.upsert({
+        where: { analysisId_axis: { analysisId: result.analysisId, axis: row.axis } },
+        create: { analysisId: result.analysisId, ...row },
+        update: { score: row.score, confidence: row.confidence, position: row.position },
+      });
+    }
 
     await tx.analysis.update({
       where: { id: result.analysisId },
@@ -150,6 +190,145 @@ async function onSucceeded(result: AnalysisSucceeded): Promise<void> {
         completedAt: finishedAt,
       },
     });
+  });
+
+  // Everything a creator needs to read the result is committed above, and the
+  // realtime channel has already pushed the status flip. The tips are the one
+  // part of the screen allowed to arrive late — or not at all.
+  await writeRecommendations(result, timeline);
+}
+
+/** Zeroed bands for a payload that predates the parcellation — scores to nulls anyway. */
+const EMPTY_BANDS = {
+  visual: 0,
+  audio: 0,
+  language: 0,
+  emotional: 0,
+  memorability: 0,
+} as const;
+
+/**
+ * How many prior analyses a percentile is computed against.
+ *
+ * Bounded so a heavy workspace does not scan its whole history on every job,
+ * and *recent* rather than random because a creator's style drifts — ranking
+ * today's clip against work from a year ago answers a question nobody asked.
+ */
+const HISTORY_LIMIT = 200;
+
+async function workspaceHistory(tx: Tx, analysisId: string): Promise<AxisBands[]> {
+  const analysis = await tx.analysis.findUnique({
+    where: { id: analysisId },
+    select: { workspaceId: true },
+  });
+  if (!analysis) return [];
+
+  const rows = await tx.analysisResult.findMany({
+    where: {
+      analysisId: { not: analysisId },
+      analysis: { workspaceId: analysis.workspaceId, status: AnalysisStatus.SUCCEEDED },
+    },
+    select: { rawStats: true },
+    orderBy: { createdAt: 'desc' },
+    take: HISTORY_LIMIT,
+  });
+
+  // Rows written before the parcellation existed have no `bands` and are simply
+  // absent from the ranking — which is also why this needs no backfill.
+  return rows.flatMap((row) => {
+    const parsed = axisBandsSchema.safeParse((row.rawStats as { bands?: unknown } | null)?.bands);
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+
+/**
+ * The insight stage: ask Claude for tips, then replace this analysis's rows.
+ *
+ * Never throws. A failure here must not fail the job — the analysis is already
+ * SUCCEEDED and useful, and retrying would re-run the whole handler and re-bill
+ * the call. The outcome is recorded on `raw_stats.insights` so a missing tips
+ * section can be told apart from a model that had nothing to say.
+ */
+async function writeRecommendations(
+  result: AnalysisSucceeded,
+  timeline: TimelineColumns | null,
+): Promise<void> {
+  if (!insightsEnabled() || !timeline || !result.axisBands) return;
+
+  try {
+    // Read back rather than reuse the in-memory values: the scores this asks
+    // about are the ones actually committed, and the media kind never crossed
+    // the queue at all.
+    const analysis = await prismaService.analysis.findUnique({
+      where: { id: result.analysisId },
+      select: {
+        mediaAsset: { select: { kind: true } },
+        result: {
+          select: { percentileInChannel: true, axisScores: { orderBy: { position: 'asc' } } },
+        },
+      },
+    });
+
+    const recommendations = await generateRecommendations({
+      modality: (analysis?.mediaAsset.kind ?? 'VIDEO').toLowerCase(),
+      durationSec: result.durationSec ?? timeline.timelineStartSec.at(-1) ?? 0,
+      timeline: result.timeline,
+      transcript: result.transcript ?? [],
+      axisRows: analysis?.result?.axisScores ?? [],
+      percentileInChannel: analysis?.result?.percentileInChannel ?? null,
+    });
+
+    await prismaService.$transaction(async (tx) => {
+      await lockAnalysis(tx, result.analysisId);
+      // No natural key on this table, so replace rather than upsert — otherwise
+      // a redelivered job appends a second copy of every tip.
+      await tx.analysisRecommendation.deleteMany({ where: { analysisId: result.analysisId } });
+      if (recommendations.length > 0) {
+        await tx.analysisRecommendation.createMany({
+          data: recommendations.map((item) => ({ analysisId: result.analysisId, ...item })),
+        });
+      }
+      await mergeInsightStatus(tx, result.analysisId, {
+        status: 'ok',
+        count: recommendations.length,
+      });
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[${result.analysisId}] insight generation failed: ${message}`);
+    try {
+      await mergeInsightStatus(prismaService, result.analysisId, {
+        status: 'failed',
+        error: message.slice(0, 500),
+      });
+    } catch {
+      // Recording *why* the tips are missing is strictly best-effort too.
+    }
+  }
+}
+
+/**
+ * Merge a key into `raw_stats` without clobbering it.
+ *
+ * A whole-object write would drop the `bands` the first transaction stored, and
+ * every future percentile in the workspace depends on them — so this reads,
+ * merges and writes rather than overwriting.
+ */
+async function mergeInsightStatus(
+  tx: Tx | typeof prismaService,
+  analysisId: string,
+  insights: Prisma.InputJsonObject,
+): Promise<void> {
+  const row = await tx.analysisResult.findUnique({
+    where: { analysisId },
+    select: { rawStats: true },
+  });
+  if (!row) return;
+
+  const existing = (row.rawStats ?? {}) as Prisma.InputJsonObject;
+  await tx.analysisResult.update({
+    where: { analysisId },
+    data: { rawStats: { ...existing, insights } },
   });
 }
 

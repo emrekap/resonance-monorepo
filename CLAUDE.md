@@ -199,12 +199,28 @@ second the policy cannot resolve). Rows stay scoped by `analyses_select` against
 the payload is never rendered, because a list row also needs `analysis_results` + `media_assets`.
 Typechecked, linted and unit-tested — **no event has been observed reaching a device.**
 
-**TODO:** the Yeo-7 parcellation that fills `analysis_results` timeline bands and the calibration
-behind `resonanceScore` (both null today — see [`apps/worker/README.md`](apps/worker/README.md));
-deploy images for `apps/worker` + the ml worker; generate `@repo/ml-client` from the ml OpenAPI; run
-the YouTube connect flow against real Google credentials + Supabase Google login end-to-end; run the
-upload→analyze flow on-device against a live GPU worker; Instagram/TikTok `PlatformProvider`s;
-Facebook/TikTok login providers; scaffold `apps/web`.
+**Insights (done, unobserved):** a successful analysis now fills every column it can.
+`apps/ml/atlas/` holds a committed Schaefer-2018 17-network fsaverage5 parcellation (parcel ids, not
+axis ids — the mapping lives in `axis_map.py` so it is reviewable); `parcellation.py` reduces the
+`[T × 20484]` tensor to five product axes, and the transcript rides along from the whisperx events
+already on each segment. `apps/worker` scores it: `percentileInChannel` is a rank against the
+**workspace's own prior analyses** (no calibration needed, no cross-creator comparison),
+`resonanceScore` is the same number rounded, and `analysis_axis_scores` gets five rows — all of it
+withheld below 5 priors, because a rank with no history is not a number. Then `insights.ts` asks
+`claude-opus-5` for `analysis_recommendations`, over numbers it is given rather than any it computes,
+validated hard on the way in and best-effort throughout (`ANTHROPIC_API_KEY` unset → analyses still
+score, just without tips). `GET /analyze/:id` returns the lot and the mobile result screen renders
+verdict → timeline → why → do-this. Unit-tested on both sides of the queue, including a shared
+fixture that catches api↔ml contract drift — **but no real clip has run through it end to end.**
+
+**TODO:** run a real clip through ml → worker → Postgres and confirm the five timeline arrays land
+(the atlas's vertex order is asserted against `n_vertices` but has never been checked against real
+anatomy — a high-motion clip should light the visual band); deploy images for `apps/worker` + the ml
+worker; generate `@repo/ml-client` from the ml OpenAPI; run the YouTube connect flow against real
+Google credentials + Supabase Google login end-to-end; run the upload→analyze flow on-device against
+a live GPU worker; the calibration head that would give `resonanceScore` an absolute meaning
+(`docs/resonance-model-design.md` §2); Instagram/TikTok `PlatformProvider`s; Facebook/TikTok login
+providers; scaffold `apps/web`.
 
 ## Conventions
 

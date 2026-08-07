@@ -1,0 +1,46 @@
+{
+  "analysisId": "0199a1f2-3b4c-7d5e-8f90-1a2b3c4d5e6f",
+  "attempt": 1,
+  "queueJobId": "0199a1f2-3b4c-7d5e-8f90-1a2b3c4d5e6f",
+  "device": "cuda",
+  "startedAt": "2026-08-07T10:00:00.000Z",
+  "finishedAt": "2026-08-07T10:00:42.000Z",
+  "durationMs": 42000,
+  "timeline": {
+    "startSec": [0.0, 1.49, 2.98],
+    "attention": [0.012, -0.004, 0.031],
+    "visual": [0.21, -0.08, 0.44],
+    "audio": [0.05, 0.11, -0.02],
+    "language": [-0.13, 0.02, 0.09]
+  },
+  "durationSec": 4.47,
+  "transcript": [
+    {
+      "startSec": 0.0,
+      "text": "okay so here is the thing"
+    },
+    {
+      "startSec": 1.49,
+      "text": ""
+    },
+    {
+      "startSec": 2.98,
+      "text": "watch this"
+    }
+  ],
+  "axisBands": {
+    "visual": 0.19,
+    "audio": 0.046,
+    "language": -0.006,
+    "emotional": 0.02,
+    "memorability": -0.01
+  },
+  "stats": {
+    "globalMean": 0.0001,
+    "globalStd": 0.42,
+    "globalMin": -2.9,
+    "globalMax": 3.1,
+    "nTimesteps": 3,
+    "nVertices": 20484
+  }
+}

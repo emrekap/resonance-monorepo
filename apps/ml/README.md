@@ -102,6 +102,67 @@ Both import **`engine.py`**, which owns the environment bootstrap (`.env`, PATH,
 device selection), the model load, and inference itself. Loading ~10 GB of weights twice in two
 slightly different ways is the drift that split avoids.
 
+## From vertices to product axes
+
+TRIBE predicts `[n_segments × 20484]` BOLD on the fsaverage5 cortical surface. Nobody can be shown
+that, and the brain-wide _average_ of it is the one summary independent work has shown does **not**
+predict engagement ([`docs/resonance-model-design.md`](../../docs/resonance-model-design.md) §0) —
+the signal lives in specific networks. So `parcellation.py` averages _within_ networks instead:
+
+```text
+preds [T × 20484] ──atlas/──▶ five per-segment bands ──▶ three timeline curves
+                                                     └─▶ five clip-level scalars
+```
+
+| Axis         | Cortex                          | Defensibility                                                      |
+| ------------ | ------------------------------- | ------------------------------------------------------------------ |
+| visual       | Visual + Dorsal Attention       | high — best-predicted cortex, 1:1 with the video encoder           |
+| audio        | auditory cortex (`SomMotB_Aud`) | high — direct match for the audio encoder                          |
+| language     | temporo-parietal + Default-B    | medium — solid for speech, meaningless without it                  |
+| emotional    | Limbic                          | **low** — the real reward circuitry is subcortical and absent here |
+| memorability | Default Mode core               | **low** — memory encoding needs hippocampus, also absent           |
+
+The last two still get numbers, and ship labelled `BETA` in the product regardless. Having a number
+does not make a cortical proxy for a subcortical structure defensible.
+
+### The atlas
+
+`atlas/schaefer400_17networks_fsaverage5.npz` is **committed** — 14 KB, generated once by
+[`scripts/build_atlas.py`](scripts/build_atlas.py) from the Schaefer 2018 400-parcel / 17-network
+parcellation (Yeo lab / CBIG). Nothing at runtime downloads it, which is why `nilearn` stays an
+optional dependency.
+
+Schaefer rather than the raw Yeo-17 annotation for two reasons: every parcel name carries its network
+assignment (`17Networks_LH_SomMotB_Aud_1`), so [`atlas/axis_map.py`](atlas/axis_map.py) can be checked
+against the data; and it is sub-parcelled, which the audio axis needs — at the 17-network level
+auditory cortex is inside SomMotB next to hand and foot motor, and the band would be mostly dilution.
+
+The artifact stores **parcel ids**, not axis ids, so remapping an axis is a code review rather than a
+regenerated binary. It holds an `int16` array and a unicode string array — never a pickled object
+array, so loading it can never execute code.
+
+Rebuild only if the source parcellation changes:
+
+```bash
+python scripts/build_atlas.py    # needs nibabel + network access
+```
+
+### Tests
+
+```bash
+pip install pytest
+pytest tests/
+```
+
+`tests/test_parcellation.py` plants a known signal in each network's vertices and asserts the bands
+recover it exactly — the only end-to-end check that the masks index what they claim to. It also
+rejects the wrong surface, a transposed array, and any axis that resolves to zero vertices.
+
+`tests/test_contract.py` is the Python half of the api↔ml boundary check: it asserts Pydantic still
+reproduces `packages/queue/src/__fixtures__/analysis-succeeded.json`, which `contract.test.ts` parses
+with zod. The two files are mirrored by hand, so nothing but this notices when one side moves. After
+an intentional contract change, `pytest tests/test_contract.py --regenerate-fixture`.
+
 ### The worker
 
 ```bash

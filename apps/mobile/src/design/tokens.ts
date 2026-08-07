@@ -36,6 +36,14 @@ export const palettes = {
     onAccent: '#FFFFFF',
     bandTrack: '#1F1E26',
     bandNeutral: '#3B3B47',
+    // The three modality curves on the attention timeline. Distinct hues rather
+    // than one hue at three lightnesses: the lines cross constantly, and
+    // lightness alone stops separating them the moment they overlap. Each holds
+    // 3:1 against the canvas (the WCAG bar for non-text graphics) in both
+    // schemes — asserted in tokens.test.ts.
+    bandVisual: '#8B72FF',
+    bandAudio: '#3DD9C4',
+    bandLanguage: '#FFA94D',
     success: '#4ADE80',
     warning: '#FBBF24',
     danger: '#FF6369',
@@ -58,6 +66,12 @@ export const palettes = {
     onAccent: '#FFFFFF',
     bandTrack: '#E7E5F0',
     bandNeutral: '#C6C3D4',
+    // Darker than their dark-mode counterparts: on a near-white canvas the hue
+    // has to carry the separation *and* the contrast, so these are the deep
+    // versions of the same three hues rather than the same hex inverted.
+    bandVisual: '#6338E8',
+    bandAudio: '#0F766E',
+    bandLanguage: '#B45309',
     success: '#15803D',
     warning: '#B45309',
     danger: '#DC2626',
