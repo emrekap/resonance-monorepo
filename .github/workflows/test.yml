@@ -21,7 +21,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
           cache: pip
           cache-dependency-path: apps/ml/requirements-dev.txt
 
@@ -51,4 +51,13 @@ jobs:
       # `bunx turbo`, not `bun run test` — the root `test` script also runs the
       # Python suite, which lives in the `ml` job above and has no venv here.
       # `typecheck` builds apps/api's AppType d.ts first via its `^build` dep.
+      #
+      # That `^build` reaches @repo/db's `prisma generate`, whose config resolves
+      # DIRECT_DATABASE_URL or throws — even though generating a client never
+      # connects. There is no .env here, so hand it a placeholder: nothing in
+      # this job talks to a database, and anything that tried would fail to
+      # reach that host rather than find a real one. (turbo only forwards it
+      # because `build` lists it in `passThroughEnv`.)
       - run: bunx turbo run typecheck test
+        env:
+          DIRECT_DATABASE_URL: ${{secrets.TEST_DIRECT_DATABASE_URL}}
