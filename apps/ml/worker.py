@@ -96,6 +96,27 @@ _SUFFIX_BY_CONTENT_TYPE = {
 }
 
 
+def _redacted(url: str) -> str:
+    """A Redis URL safe to log.
+
+    A managed Redis hands you `rediss://default:<token>@host:6379`, and the
+    startup banner logs the connection it is using — so without this, every boot
+    writes a live credential into wherever logs are shipped. Logs outlive
+    processes and are rarely as access-controlled as a secret store.
+
+    Never raises: a banner that crashes the worker would be worse than one that
+    says nothing useful.
+    """
+    try:
+        parsed = urlparse(url)
+        if not parsed.password:
+            return url
+        host = parsed.netloc.rsplit("@", 1)[-1]
+        return f"{parsed.scheme}://{parsed.username or ''}:***@{host}"
+    except Exception:
+        return "<unparseable REDIS_URL>"
+
+
 # ─── media ───────────────────────────────────────────────────────────────────
 
 
@@ -281,7 +302,7 @@ class AnalysisProcessor:
                 analysisId=analysis_id,
                 attempt=attempt,
                 queueJobId=str(job.id),
-                device=engine.DEVICE,
+                device=engine.device(),
                 startedAt=iso(started_at),
             ),
             analysis_id,
@@ -314,7 +335,7 @@ class AnalysisProcessor:
                     analysisId=analysis_id,
                     attempt=attempt,
                     queueJobId=str(job.id),
-                    device=engine.DEVICE,
+                    device=engine.device(),
                     startedAt=iso(started_at),
                     finishedAt=iso(finished_at),
                     error=f"{type(exc).__name__}: {exc}"[:2000],
@@ -336,7 +357,7 @@ class AnalysisProcessor:
                 analysisId=analysis_id,
                 attempt=attempt,
                 queueJobId=str(job.id),
-                device=engine.DEVICE,
+                device=engine.device(),
                 startedAt=iso(started_at),
                 finishedAt=iso(finished_at),
                 durationMs=duration_ms,
@@ -364,8 +385,10 @@ class AnalysisProcessor:
 
 
 async def main() -> None:
-    logger.info(
-        f"Loading TRIBE v2 before consuming (device: {engine.DEVICE})…")
+    # "the model", not "TRIBE v2": under ML_BACKEND=synthetic this loads a
+    # fabricator, and a banner that claims otherwise is how someone ends up
+    # trusting a synthetic run. The backend says which it is via `device()`.
+    logger.info(f"Loading the model before consuming (device: {engine.device()})…")
     await asyncio.to_thread(engine.load_model)
 
     results = Queue(
@@ -384,8 +407,8 @@ async def main() -> None:
     )
 
     logger.info(
-        f"🧠 ml worker consuming \"{QUEUE_PREFIX}:{ANALYSIS_QUEUE}\" on {REDIS_URL} "
-        f"(concurrency {CONCURRENCY})"
+        f"🧠 ml worker consuming \"{QUEUE_PREFIX}:{ANALYSIS_QUEUE}\" on "
+        f"{_redacted(REDIS_URL)} (concurrency {CONCURRENCY})"
     )
 
     stop = asyncio.Future()
