@@ -13,12 +13,11 @@ jobs:
   ml:
     name: apps/ml (pytest)
     runs-on: ubuntu-latest
-    environment: test
     defaults:
       run:
         working-directory: apps/ml
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v5
         with:
@@ -40,8 +39,9 @@ jobs:
   node:
     name: turbo (typecheck + test)
     runs-on: ubuntu-latest
+    environment: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: oven-sh/setup-bun@v2
         with:
