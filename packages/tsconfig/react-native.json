@@ -5,7 +5,7 @@
   "compilerOptions": {
     "lib": ["ESNext"],
     "jsx": "react-jsx",
-    "types": [],
+    "types": ["bun"],
     "noEmit": true
   }
 }
