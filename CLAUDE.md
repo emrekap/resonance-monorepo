@@ -239,5 +239,10 @@ providers; scaffold `apps/web`.
 - **Adding/changing a DB model?** Use the `add-db-model` skill (`.claude/skills/`) — snake_case
   `@@map`/`@map`, `<name>_enum` for enum types, and every new table needs RLS enabled + forced with
   a policy rooted at `workspace_id` or `profile_id`.
+- **Touching `apps/ml`?** Test first. `cd apps/ml && pytest` needs no GPU, no torch and no `tribev2`,
+  because the model sits behind a backend seam (`backends/`) — and CI enforces that by installing
+  only `requirements-dev.txt`. **Never add a module-scope `import torch` to a tested module**; only
+  `backends/tribe.py` may import it, and only inside a function. Run the whole worker without a GPU
+  via `ML_BACKEND=synthetic python worker.py`.
 - After structural changes, **re-index** so the graph doesn't go stale.
 - Commit / push only when asked.

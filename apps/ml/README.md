@@ -149,10 +149,24 @@ python scripts/build_atlas.py    # needs nibabel + network access
 
 ### Tests
 
+The model sits behind a seam (`backends/`), so the suite needs neither a GPU nor `tribev2` nor torch
+— it runs on a laptop and on a CI runner in under a second.
+
 ```bash
-pip install pytest
-pytest tests/
+python -m venv .venv && ./.venv/bin/pip install -r requirements-dev.txt
+./.venv/bin/python -m pytest
 ```
+
+Or `bun run test:ml` from the repo root, which also runs as part of `bun run test`. CI runs the same
+thing on every push (`.github/workflows/test.yml`).
+
+Three tiers; the last two are deselected by default, so a bare `pytest` never needs a daemon:
+
+| Command                 | Needs                  | Covers                                      |
+| ----------------------- | ---------------------- | ------------------------------------------- |
+| `pytest`                | nothing                | everything below the model                  |
+| `pytest -m integration` | `bun run docker:local` | the real BullMQ round-trip through Redis    |
+| `pytest -m gpu`         | a GPU + `tribev2`      | `TribeBackend` against the backend contract |
 
 `tests/test_parcellation.py` plants a known signal in each network's vertices and asserts the bands
 recover it exactly — the only end-to-end check that the masks index what they claim to. It also
@@ -163,6 +177,11 @@ reproduces `packages/queue/src/__fixtures__/analysis-succeeded.json`, which `con
 with zod. The two files are mirrored by hand, so nothing but this notices when one side moves. After
 an intentional contract change, `pytest tests/test_contract.py --regenerate-fixture`.
 
+`tests/test_neuralset_types.py` checks the `Segment` / `Word` stand-ins in `backends/synthetic.py`
+against the **real** neuralset classes. It runs here (this venv has neuralset) and skips in CI — so
+the fake's assumptions are re-verified on every local run rather than deferred to a GPU that is not
+available. It is what established that the real `Word` requires a `timeline` field.
+
 ### The worker
 
 ```bash
@@ -171,6 +190,28 @@ python worker.py
 
 Needs `REDIS_URL` (see `.env.example`) and a running Redis —
 `docker compose -f ../../infra/docker/docker-compose.yml up -d`.
+
+#### Without a GPU
+
+```bash
+ML_BACKEND=synthetic python worker.py
+```
+
+Real Redis, real download, real `worker.py` — only the model is fabricated, from a deterministic
+tensor with signal planted into named cortical networks. The run reports `device: "synthetic"`, which
+lands in `inference_runs.device`, so a synthetic result can always be told from a real one in the
+database.
+
+| Variable                | Default | Meaning                                        |
+| ----------------------- | ------- | ---------------------------------------------- |
+| `ML_BACKEND`            | `tribe` | `tribe` \| `synthetic`                         |
+| `ML_SYNTH_SCENARIO`     | `mixed` | `visual_burst` \| `talky` \| `flat` \| `mixed` |
+| `ML_SYNTH_SEED`         | `0`     | makes the fabricated tensor reproducible       |
+| `ML_SYNTH_DURATION_SEC` | probed  | skip reading the media's real duration         |
+| `ML_RECORD_DIR`         | unset   | write a `tribe-shape.json` manifest per run    |
+
+`ML_RECORD_DIR` is how the two remaining guesses in `backends/synthetic.py` (`TR_SEC`, the dtype)
+eventually become facts: set it on a box that can run the real model, and commit the manifest.
 
 ```text
 apps/api  ──▶  [analysis]  ──▶  worker.py  ──▶  [analysis-results]  ──▶  apps/worker  ──▶  Postgres
