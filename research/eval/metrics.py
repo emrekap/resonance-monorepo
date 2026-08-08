@@ -66,17 +66,38 @@ def per_creator_spearman(
 def per_creator_pairwise_accuracy(
     posts: pd.DataFrame, index: np.ndarray, y_true: np.ndarray, y_pred: np.ndarray
 ) -> dict[str, float]:
-    """Given two of a creator's posts, do we pick the higher performer?"""
+    """Given two of a creator's posts, do we pick the higher performer?
+
+    Tie convention (fix round 1 — a constant `y_pred`, e.g. Task 7's B0
+    "creator historical mean" baseline, ties EVERY pair for a creator):
+    a pair tied in `y_true` is skipped, same as before — an unordered true
+    pair has no right answer to score against. A pair tied in `y_pred`
+    (`y_pred[i] == y_pred[j]`) is NOT skipped and is NOT scored as a definite
+    hit or miss either. It scores 0.5 — the standard concordant/discordant/
+    tied treatment used by AUC and Kendall's tau-b. The strict `y_pred[i] >
+    y_pred[j]` comparison this replaced scored a predicted tie as a definite
+    `False`, which meant a constant predictor's accuracy was actually the
+    fraction of `(i, j)` pairs (in `positions` order, i.e. `index` order)
+    with `y_true[i] < y_true[j]` — a property of row order, not of the
+    predictions, and it ranged over the entire `[0, 1]` interval under a
+    re-listing of the exact same posts. Half credit makes a predicted tie
+    contribute the same 0.5 regardless of which row came first, so the
+    metric is invariant to `positions` order as a per-creator statistic over
+    an unordered set of pairs should be.
+    """
     out: dict[str, float] = {}
     for creator, positions in _by_creator(posts, index).items():
         if len(positions) < 2:
             continue
-        correct = 0
+        correct = 0.0
         total = 0
         for i, j in combinations(positions, 2):
             if y_true[i] == y_true[j]:
-                continue  # an unordered pair cannot be got right or wrong
+                continue  # an unordered true pair cannot be got right or wrong
             total += 1
+            if y_pred[i] == y_pred[j]:
+                correct += 0.5  # predicted tie: half credit, order-invariant
+                continue
             true_order = y_true[i] > y_true[j]
             pred_order = y_pred[i] > y_pred[j]
             correct += int(true_order == pred_order)
@@ -88,14 +109,32 @@ def per_creator_pairwise_accuracy(
 def per_creator_top1(
     posts: pd.DataFrame, index: np.ndarray, y_true: np.ndarray, y_pred: np.ndarray
 ) -> dict[str, float]:
-    """Did the highest-predicted post turn out to be the best one?"""
+    """Did the highest-predicted post turn out to be the best one?
+
+    Tie convention (fix round 1 — a constant `y_pred` ties EVERY post at the
+    max, which is Task 7's B0 baseline's common case, not a corner): rather
+    than picking one post among those tied at `y_pred`'s max (`np.argmax`'s
+    first-occurrence rule, which made the score a hard 0 or 1 decided purely
+    by which row of the tie happened to come first in `positions`/`index`
+    order), this returns the EXPECTED score under uniform-random tie-breaking
+    among the predicted-max-tied posts: the fraction of those tied posts that
+    are actually the creator's best (`y_true == y_true[positions].max()`).
+    When the predicted max is unique this reduces exactly to the old 0/1
+    answer — the tied set has one member, so the fraction is that member's
+    hit/miss indicator — so this is a strict generalisation, not a behaviour
+    change for a model that produces distinct predictions. It only changes
+    the constant-prediction case, and it does so by construction without
+    reference to row order, so the result no longer depends on it.
+    """
     out: dict[str, float] = {}
     for creator, positions in _by_creator(posts, index).items():
         if len(positions) < 2:
             continue
-        best_predicted = positions[int(np.argmax(y_pred[positions]))]
+        pred_values = y_pred[positions]
+        tied_at_max = positions[pred_values == pred_values.max()]
         best_actual = y_true[positions].max()
-        out[creator] = float(y_true[best_predicted] == best_actual)
+        hits = int(np.count_nonzero(y_true[tied_at_max] == best_actual))
+        out[creator] = hits / len(tied_at_max)
     return out
 
 
