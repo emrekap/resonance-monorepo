@@ -31,9 +31,19 @@ DELTA_RHO_THRESHOLD = 0.10
 ALPHA = 0.05
 
 
+def _is_unmeasurable(uplift: Interval) -> bool:
+    """True if any field of the interval is NaN — a result that was never computed.
+
+    `verdict()` and `explain()` must agree on which NaN counts as "no result".
+    A single helper, not two copies of the same three-field check, is what
+    keeps them from drifting apart.
+    """
+    return math.isnan(uplift.point) or math.isnan(uplift.lo) or math.isnan(uplift.hi)
+
+
 def verdict(uplift: Interval, p_value: float) -> str:
     # An unmeasurable result is not a pass. NaN anywhere means RED.
-    if math.isnan(uplift.point) or math.isnan(uplift.lo) or math.isnan(uplift.hi):
+    if _is_unmeasurable(uplift):
         return RED
     if uplift.includes_zero():
         return RED
@@ -50,7 +60,7 @@ def explain(uplift: Interval, p_value: float) -> str:
     """One sentence naming the rule that decided the band."""
     band = verdict(uplift, p_value)
     if band == RED:
-        if math.isnan(uplift.point):
+        if _is_unmeasurable(uplift):
             return "RED: the uplift could not be measured."
         return (
             f"RED: the 95% confidence interval on the uplift "

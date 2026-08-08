@@ -91,6 +91,19 @@ def test_explain_red_by_unmeasurable_nan_interval():
     assert "could not be measured" in sentence
 
 
+def test_explain_red_by_partial_nan_interval_is_unmeasurable_not_formatted():
+    # A hand-constructed interval with only one NaN field still bands RED (via
+    # verdict()'s three-field check), but explain()'s "could not be measured"
+    # guard must use the SAME three-field check — not point-only — or this
+    # renders a malformed sentence like "[nan, 0.300] includes zero" instead.
+    # The absence of a literal "nan" in the sentence is what actually catches
+    # a regression to a point-only guard; the presence check alone would not.
+    sentence = explain(Interval(point=0.15, lo=float("nan"), hi=0.30), p_value=0.001)
+    assert sentence.startswith("RED")
+    assert "could not be measured" in sentence
+    assert "nan" not in sentence
+
+
 def test_explain_green():
     sentence = explain(Interval(point=0.18, lo=0.11, hi=0.25), p_value=0.001)
     assert sentence.startswith("GREEN")
@@ -137,6 +150,7 @@ def test_explain_band_always_matches_verdict_band():
         (Interval(point=0.10, lo=0.05, hi=0.15), 0.05),
         (Interval(point=0.10, lo=0.05, hi=0.15), 0.049),
         (Interval(point=0.15, lo=0.0, hi=0.30), 0.001),
+        (Interval(point=0.15, lo=nan, hi=0.30), 0.001),
     ]
     for uplift, p_value in cases:
         band = verdict(uplift, p_value)
