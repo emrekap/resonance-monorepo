@@ -27,7 +27,11 @@ def test_red_takes_precedence_over_yellow_when_bands_overlap():
 
 def test_red_takes_precedence_even_over_a_green_sized_point_estimate():
     # A big point estimate with a CI through zero is not a demonstrated lift.
-    assert verdict(Interval(point=0.22, lo=-0.03, hi=0.47), p_value=0.06) == RED
+    # p must be genuinely significant (< ALPHA): with a non-significant p the
+    # numeric GREEN condition (point >= threshold and p < alpha) is already
+    # false on its own, so the input can't distinguish Red-first from
+    # Green-first ordering — it would pass under either implementation.
+    assert verdict(Interval(point=0.22, lo=-0.03, hi=0.47), p_value=0.01) == RED
 
 
 def test_nan_p_value_cannot_be_green():
