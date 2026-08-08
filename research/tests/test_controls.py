@@ -51,6 +51,28 @@ def test_label_shuffle_passes_even_on_a_contaminated_world(contaminated):
     assert result.passed, result.detail
 
 
+def test_label_shuffle_catches_train_test_overlap(clean):
+    # Paired with the test above: together they state label_shuffle_control's
+    # actual scope. It cannot catch a feature that *is* the label (that's
+    # feature_label_leak_control's job), but it IS a procedural-leak detector,
+    # and train/test overlap is the textbook procedural leak. Built by hand,
+    # not through regime1_temporal/regime2_grouped -- those functions correctly
+    # refuse to ever produce an overlapping split, so the only way to hand the
+    # control one is to construct it directly.
+    #
+    # With `split.test` a subset of `split.train`, B3 is fit on the shuffled
+    # labels of those very rows and then scored on them again: it doesn't need
+    # to generalise, it just needs to reproduce what it memorised during
+    # training. So the shuffled run does NOT collapse to chance, and the
+    # control must fire.
+    split = regime1_temporal(clean.posts)
+    corrupt = Split(name="train_test_overlap", train=split.train, test=split.train)
+
+    result = label_shuffle_control(clean, corrupt, seed=0)
+    assert not result.passed
+    assert "shuffle" in result.detail.lower()
+
+
 def test_brain_average_control_fails_to_predict_on_clean_data(clean):
     # Replicating the known negative result: a naive average across neuro
     # dimensions must NOT clear the Green bar.
