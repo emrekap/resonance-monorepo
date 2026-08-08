@@ -1,0 +1,15 @@
+# The eval harness for the pre-registered validation experiment.
+#
+# One file, not the run/dev split apps/ml needs: nothing here deploys, so there
+# is no production install to keep lean. There is deliberately NO torch — this
+# package never runs a model, it evaluates predictions.
+#
+#   python -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+#   ./.venv/bin/python -m pytest
+
+numpy>=2.1
+pandas>=2.2
+pyarrow>=17.0        # parquet
+scipy>=1.14          # spearmanr, wilcoxon, expit
+scikit-learn>=1.5    # Ridge, StandardScaler
+pytest>=8.0
