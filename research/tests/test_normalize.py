@@ -64,23 +64,40 @@ def test_zero_variance_creator_does_not_produce_nan():
     assert np.allclose(z, 0.0)
 
 
+def test_transform_guard_fires_on_a_reordered_frame():
+    # The dangerous corruption, and the one a length check structurally cannot
+    # see: same length, same rows, reversed order. `test = [7, 8, 9]` is still
+    # in-bounds for the 10-row reversed frame, so this does not raise
+    # IndexError on its own — without a content/order fingerprint it would
+    # silently normalize row 7 of the reversed frame (which is row 2's data)
+    # against creator "a"'s statistics from the *original* frame's row 7.
+    posts = _posts()
+    train = np.arange(0, 7)
+    test = np.arange(7, 10)
+    normalizer = WithinCreatorNormalizer().fit(posts, train)
+
+    reordered = posts.iloc[::-1].reset_index(drop=True)
+    with pytest.raises(LeakageError, match="does not match"):
+        normalizer.transform(reordered, test)
+
+
 def test_transform_guard_fires_on_a_resliced_frame():
-    # The realistic mistake: fit on the full, unsliced frame (as `fit` requires),
-    # then later transform a frame that has been sliced down to just the test
-    # rows — while still reusing `test`'s positions, which index into the
-    # *original* frame, not the resliced one. Same positions, different
-    # coordinate system: the frame-length mismatch is what catches it.
+    # The weaker corruption: a re-sliced, differently-sized frame. Kept as a
+    # companion case — the fingerprint subsumes a plain length check, so this
+    # still raises LeakageError, but (unlike the reordered case above) an
+    # out-of-bounds position would have raised *something* even without the
+    # guard.
     posts = _posts()
     train = np.arange(0, 7)
     test = np.arange(7, 10)
     normalizer = WithinCreatorNormalizer().fit(posts, train)
 
     resliced = posts.iloc[test].reset_index(drop=True)
-    with pytest.raises(LeakageError, match="fit on a frame of 10"):
+    with pytest.raises(LeakageError, match="does not match"):
         normalizer.transform(resliced, test)
 
 
-def test_transform_frame_length_guard_passes_on_matching_frame():
+def test_transform_frame_fingerprint_guard_passes_on_matching_frame():
     posts = _posts()
     normalizer = WithinCreatorNormalizer().fit(posts, np.arange(0, 7))
     z = normalizer.transform(posts, np.arange(7, 10))  # same frame: the correct convention
