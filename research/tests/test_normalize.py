@@ -62,3 +62,26 @@ def test_zero_variance_creator_does_not_produce_nan():
     z = WithinCreatorNormalizer().fit(posts, index).transform(posts, index)
     assert np.isfinite(z).all()
     assert np.allclose(z, 0.0)
+
+
+def test_transform_guard_fires_on_a_resliced_frame():
+    # The realistic mistake: fit on the full, unsliced frame (as `fit` requires),
+    # then later transform a frame that has been sliced down to just the test
+    # rows — while still reusing `test`'s positions, which index into the
+    # *original* frame, not the resliced one. Same positions, different
+    # coordinate system: the frame-length mismatch is what catches it.
+    posts = _posts()
+    train = np.arange(0, 7)
+    test = np.arange(7, 10)
+    normalizer = WithinCreatorNormalizer().fit(posts, train)
+
+    resliced = posts.iloc[test].reset_index(drop=True)
+    with pytest.raises(LeakageError, match="fit on a frame of 10"):
+        normalizer.transform(resliced, test)
+
+
+def test_transform_frame_length_guard_passes_on_matching_frame():
+    posts = _posts()
+    normalizer = WithinCreatorNormalizer().fit(posts, np.arange(0, 7))
+    z = normalizer.transform(posts, np.arange(7, 10))  # same frame: the correct convention
+    assert np.isfinite(z).all()

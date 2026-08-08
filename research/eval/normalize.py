@@ -31,6 +31,7 @@ class WithinCreatorNormalizer:
         self._stats: dict[str, tuple[float, float]] = {}
         self._global: tuple[float, float] | None = None
         self._fit_positions: frozenset[int] | None = None
+        self._fit_frame_len: int | None = None
 
     def fit(self, posts: pd.DataFrame, index: np.ndarray) -> "WithinCreatorNormalizer":
         """Fit mean/std per creator (and globally) on `posts.iloc[index]` only.
@@ -38,10 +39,15 @@ class WithinCreatorNormalizer:
         `index` must be integer positions into the full `posts` frame (see
         class docstring) — the positions recorded here are later compared
         raw, in `assert_fit_disjoint_from`, against test positions in that
-        same frame.
+        same frame. The length of `posts` is recorded too, so `transform` can
+        catch a caller that comes back with a differently-shaped frame — a
+        different length means a different coordinate system, which is the
+        actual hazard a same-length-but-resliced frame could otherwise hide
+        from the position-set comparisons alone.
         """
         index = np.asarray(index)
         self._fit_positions = frozenset(int(i) for i in index)
+        self._fit_frame_len = len(posts)
 
         labels = posts["label"].to_numpy()[index]
         creators = posts["creator_id"].to_numpy()[index]
@@ -59,10 +65,21 @@ class WithinCreatorNormalizer:
 
         `index` must be integer positions into the same, full `posts` frame
         passed to `fit` (see class docstring) — it need not be, and usually
-        is not, the same index `fit` was called with.
+        is not, the same index `fit` was called with. `posts` itself must be
+        that same frame (or an equal-length one): a differently-sized frame
+        means the positions in `index` do not refer to the rows they did at
+        fit time, so that mismatch raises `LeakageError` rather than silently
+        normalizing against the wrong rows.
         """
-        if self._fit_positions is None or self._global is None:
+        if self._fit_positions is None or self._global is None or self._fit_frame_len is None:
             raise RuntimeError("WithinCreatorNormalizer is not fitted")
+
+        if len(posts) != self._fit_frame_len:
+            raise LeakageError(
+                f"normalizer was fit on a frame of {self._fit_frame_len} row(s) but "
+                f"transform was given a frame of {len(posts)} row(s) — positions are not "
+                "comparable across differently-sized frames"
+            )
 
         index = np.asarray(index)
         labels = posts["label"].to_numpy()[index]
