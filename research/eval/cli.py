@@ -212,10 +212,17 @@ def run(snapshot_dir: Path, out_dir: Path, *, seed: int = 0) -> dict:
     for name, split in regimes.items():
         payload["regimes"][name] = _evaluate_regime(snap, split, seed=seed)
 
-    # Regime 1 is the production-mirroring regime, so its band is the headline —
-    # and `verdict_regime` records that, so the report can say whose band it is.
-    payload["verdict"] = payload["regimes"][HEADLINE_REGIME]["verdict"]
+    # Regime 1 is the production-mirroring regime, so its band is the headline.
+    # ATTRIBUTION FIRST, THEN THE BAND: `verdict_regime` is set, and the band is
+    # then read back THROUGH it. Written the other way round -- band from
+    # `HEADLINE_REGIME`, attribution assigned separately -- the two are two
+    # independent statements about one fact, and a typo in either makes the
+    # report attribute a band to a regime it did not come from. That is the
+    # exact mis-attribution the headline-naming line exists to prevent,
+    # surviving one level up in the code that feeds it. Derived, it cannot
+    # happen: there is one lookup, and the label names the key it used.
     payload["verdict_regime"] = HEADLINE_REGIME
+    payload["verdict"] = payload["regimes"][payload["verdict_regime"]]["verdict"]
     write_results(Path(out_dir), payload)
     return payload
 

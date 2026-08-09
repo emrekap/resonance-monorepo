@@ -89,7 +89,15 @@ def verdict(uplift: Interval, p_value: float) -> str:
 
 
 def explain(uplift: Interval, p_value: float) -> str:
-    """One sentence naming the rule that decided the band."""
+    """One sentence naming the rule that decided the band.
+
+    p is formatted `.4g`, matching `report._rung_table`'s sibling rendering of
+    the same number on the uplift line. Under the `.4f` this replaced, the two
+    disagreed in the artifact a human reads to make the go/no-go call: the
+    signal world rendered `p = 4.3e-06` on the uplift line and `p=0.0000`
+    directly below it, and a p that reads as exactly zero is a claim no
+    finite-sample test can make.
+    """
     band = verdict(uplift, p_value)
     if band == RED:
         if _is_unmeasurable(uplift):
@@ -107,7 +115,7 @@ def explain(uplift: Interval, p_value: float) -> str:
     if band == GREEN:
         return (
             f"GREEN: uplift {uplift.point:.3f} clears the {DELTA_RHO_THRESHOLD:.2f} "
-            f"threshold at p={p_value:.4f}."
+            f"threshold at p={p_value:.4g}."
         )
     if uplift.point < DELTA_RHO_THRESHOLD:
         return (
@@ -121,5 +129,5 @@ def explain(uplift: Interval, p_value: float) -> str:
         )
     return (
         f"YELLOW: uplift {uplift.point:.3f} clears the threshold but is not "
-        f"significant (p={p_value:.4f}, alpha={ALPHA})."
+        f"significant (p={p_value:.4g}, alpha={ALPHA})."
     )

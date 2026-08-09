@@ -25,8 +25,14 @@ corrupt split is built so that only its own assertion can fire, so deleting one
 call cannot be masked by another one raising.
 """
 
+import hashlib
 import json
 import math
+import os
+import subprocess
+import sys
+from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -48,6 +54,10 @@ from eval.snapshot import Snapshot, load_snapshot
 from eval.splits import LeakageError, Split, regime1_temporal, regime2_grouped
 from eval.synth import CONTAMINATED_WORLD, NULL_WORLD, SIGNAL_WORLD, generate, write_world
 from eval.verdict import GREEN, RED, VOID
+
+#: The `research/` package root, so the subprocess reproducibility test can run
+#: `python -m eval` with the same working directory a human would.
+ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture(scope="module")
@@ -75,6 +85,25 @@ def contaminated_snapshot(tmp_path_factory):
 def signal() -> Snapshot:
     posts, text, neuro = generate(SIGNAL_WORLD)
     return Snapshot(posts=posts, text=text, neuro=neuro, manifest={})
+
+
+#: A world whose two regimes land on DIFFERENT bands (Regime 1 RED, Regime 2
+#: YELLOW), found by sweeping `neuro_effect`. It is a test fixture rather than a
+#: fourth `synth` world for the same reason the Leaky splits are: `synth.py`'s
+#: three worlds each state a claim about the harness's ANSWER, and this one
+#: states a claim about attribution instead.
+#:
+#: Every other end-to-end fixture agrees across regimes, which is precisely why
+#: this one is needed: on an agreeing world, binding the headline to the wrong
+#: regime is indistinguishable from binding it to the right one.
+DISAGREEING_WORLD = replace(SIGNAL_WORLD, name="disagreeing", neuro_effect=0.40, seed=11)
+
+
+@pytest.fixture(scope="module")
+def disagreeing_snapshot(tmp_path_factory):
+    path = tmp_path_factory.mktemp("disagreeing")
+    write_world(DISAGREEING_WORLD, path)
+    return path
 
 
 # --- from the brief, Step 1 ------------------------------------------------
@@ -362,6 +391,290 @@ def test_the_written_report_names_the_headline_regime(signal_snapshot, tmp_path)
     run(signal_snapshot, tmp_path, seed=0)
     report = (tmp_path / "report.md").read_text()
     assert f"Headline band from `{REGIME1}`" in report
+
+
+def test_run_binds_the_headline_band_to_the_regime_it_names(disagreeing_snapshot, tmp_path):
+    # Review Important 1. `run` used to make TWO independent statements about
+    # one fact -- read the band from `HEADLINE_REGIME`, then separately label it
+    # `verdict_regime` -- so a typo in either made the report attribute a band
+    # to a regime it did not come from. Measured: swapping the band's lookup to
+    # REGIME2 while leaving the label at REGIME1 passed all 154 tests, because
+    # every end-to-end fixture had both regimes on the same band, and the
+    # render-level disagreement test hand-builds its payload and so cannot see
+    # `run`. The band is now DERIVED through `verdict_regime`, so the two cannot
+    # disagree by construction; this pins it against a re-introduction.
+    payload = run(disagreeing_snapshot, tmp_path, seed=0)
+    bands = {name: regime["verdict"] for name, regime in payload["regimes"].items()}
+
+    # Precondition, asserted rather than assumed: on a world whose regimes
+    # agree, every assertion below holds no matter which regime the band was
+    # taken from, and this test silently stops testing anything.
+    assert bands[REGIME1] != bands[REGIME2], f"fixture no longer disagrees: {bands}"
+
+    assert payload["verdict_regime"] == REGIME1
+    assert payload["verdict"] == bands[REGIME1]
+    assert payload["verdict"] != bands[REGIME2]
+
+
+# --- Review Important 2: the numbers, not just the bands -------------------
+#
+# Every other assertion in this file is categorical -- a band, a key set, a
+# file that exists. None of them touches a value, and five separate mutations
+# inside `_evaluate_regime` each passed the whole suite:
+#
+#   * uplift computed on B4 instead of B3
+#   * Wilcoxon p computed on B4 instead of B3
+#   * pairwise accuracy taken from B1's predictions
+#   * top-1 taken from B1's predictions
+#   * `y_train` taken raw, dropping prereg §7's within-creator normalization
+#     from the training target entirely (the normalizer is still fit and its
+#     provenance still asserted, so the LEAK guard survives -- whether its
+#     output is used does not)
+#
+# The report would print "**Uplift B3 − baseline:**" over a B4 number with a
+# fully green suite. B3 is the treatment; a harness that silently reports B4
+# as B3 is the failure this project exists to prevent.
+#
+# Regenerating these: they are the signal world at seed 0, printed straight out
+# of `run`. If a deliberate change to `synth`, `ladder`, `normalize`, `metrics`
+# or `stats` moves them, re-read them from a run and update -- but read the
+# diff first, because that is the whole point of pinning them.
+
+#: Absolute tolerance. ~450x smaller than the smallest gap this must resolve
+#: (B3 0.680 vs B4 0.725 = 0.045), so it discriminates every mutation above by
+#: orders of magnitude, while staying loose enough not to fail on last-bit
+#: BLAS differences between platforms.
+GOLDEN_TOL = 1e-4
+
+GOLDEN = {
+    REGIME1: {
+        "rungs": {"B1": 0.175, "B2": 0.1625, "B3": 0.68, "B4": 0.725},
+        "baseline_rung": "B1",
+        "uplift": 0.505,
+        "p_value": 4.3000864625495016e-06,
+        "pairwise_accuracy": 0.785,
+        "top1": 0.675,
+    },
+    REGIME2: {
+        "rungs": {
+            "B1": 0.33634615384615385,
+            "B2": 0.24413461538461534,
+            "B3": 0.7715384615384615,
+            "B4": 0.8427884615384615,
+        },
+        "baseline_rung": "B1",
+        "uplift": 0.4351923076923077,
+        "p_value": 0.0078125,
+        "pairwise_accuracy": 0.79625,
+        "top1": 0.5,
+    },
+}
+
+
+@pytest.mark.parametrize("regime_name", [REGIME1, REGIME2])
+def test_signal_world_recovers_its_known_numbers(signal_snapshot, tmp_path, regime_name):
+    payload = run(signal_snapshot, tmp_path, seed=0)
+    regime = payload["regimes"][regime_name]
+    expected = GOLDEN[regime_name]
+
+    # B0 is the null floor and predicts a constant per creator, so its
+    # per-creator Spearman is undefined and the rung is legitimately NaN. Pinned
+    # as NaN rather than skipped, so a change that gives B0 a number is caught.
+    assert math.isnan(regime["rungs"]["B0"]["rho"])
+    for rung, rho in expected["rungs"].items():
+        assert regime["rungs"][rung]["rho"] == pytest.approx(rho, abs=GOLDEN_TOL), rung
+
+    assert regime["baseline_rung"] == expected["baseline_rung"]
+    # The uplift and p must come from B3 -- the treatment -- not from B4, which
+    # is the ceiling rung and scores higher.
+    assert regime["uplift"]["point"] == pytest.approx(expected["uplift"], abs=GOLDEN_TOL)
+    assert regime["p_value"] == pytest.approx(expected["p_value"], rel=1e-3)
+    # The secondary metrics must come from B3's predictions, not any other
+    # rung's.
+    assert regime["pairwise_accuracy"] == pytest.approx(
+        expected["pairwise_accuracy"], abs=GOLDEN_TOL
+    )
+    assert regime["top1"] == pytest.approx(expected["top1"], abs=GOLDEN_TOL)
+
+
+def test_the_uplift_is_measured_against_b3_not_the_ceiling_rung(signal_snapshot, tmp_path):
+    # A standalone statement of the relation the golden numbers encode, so the
+    # intent survives even if the constants above are ever regenerated wrongly:
+    # uplift is B3 minus the baseline, and B4 (all three feature families) beats
+    # B3, so an uplift silently taken from B4 lands measurably higher.
+    payload = run(signal_snapshot, tmp_path, seed=0)
+    for regime in payload["regimes"].values():
+        rungs = regime["rungs"]
+        assert rungs["B4"]["rho"] > rungs["B3"]["rho"]  # the confusable pair
+        baseline = rungs[regime["baseline_rung"]]["rho"]
+        assert regime["uplift"]["point"] == pytest.approx(
+            rungs["B3"]["rho"] - baseline, abs=GOLDEN_TOL
+        )
+
+
+# --- Review gap: a VOID run must still produce its artifacts ---------------
+
+
+def test_a_voided_run_still_writes_both_artifacts(contaminated_snapshot, tmp_path):
+    # `test_run_writes_both_artifacts` covers only the GREEN path, so deleting
+    # `write_results` from the void branch survived the whole suite. The VOID
+    # report is the one that matters most: it is the only record of WHICH
+    # control fired and why, and a void run that writes nothing is
+    # indistinguishable from a run that never happened.
+    payload = run(contaminated_snapshot, tmp_path, seed=0)
+    assert payload["voided"]
+    assert (tmp_path / "results.json").exists()
+    assert (tmp_path / "report.md").exists()
+
+    report = (tmp_path / "report.md").read_text()
+    assert "was not computed" in report
+    assert "feature_label_leak" in report  # the failed control is named
+    loaded = json.loads((tmp_path / "results.json").read_text())
+    assert loaded["verdict"] == VOID
+
+
+def test_a_voided_report_does_not_name_a_headline_regime():
+    # The `not voided` half of the headline line's guard. Task 10's own void
+    # tests cannot reach it: their payload fixture has no `verdict_regime` key
+    # at all, so the line is skipped by the `and headline_regime` half whether
+    # or not the `not voided` half is there -- removing it passed 154/154. This
+    # payload sets the key AND voids the run, which is the only shape that
+    # separates the two conditions.
+    regime = {
+        "rungs": {"B3": {"rho": 0.68, "lo": 0.5, "hi": 0.8}},
+        "baseline_rung": "B1",
+        "uplift": {"point": 0.19, "lo": 0.14, "hi": 0.24},
+        "p_value": 0.0001,
+        "pairwise_accuracy": 0.68,
+        "top1": 0.42,
+        "verdict": GREEN,
+        "explanation": "GREEN: ...",
+    }
+    payload = {
+        "snapshot": {},
+        "seed": 0,
+        "voided": True,
+        "controls": [{"name": "brain_average", "passed": False, "detail": "x", "value": 0.9}],
+        "regimes": {REGIME1: regime},
+        "verdict": VOID,
+        "verdict_regime": REGIME1,  # set, unlike Task 10's fixture
+    }
+
+    report = render_report(payload)
+    assert "was not computed" in report
+    assert "Headline band" not in report
+    assert REGIME1 not in report
+
+
+def test_the_report_renders_one_p_value_the_same_way_in_both_places(signal_snapshot, tmp_path):
+    # The uplift line and the verdict sentence directly beneath it render the
+    # SAME number through two different code paths (`report._fmt(..., '.4g')`
+    # and `verdict.explain`'s own format spec). Under `explain`'s original
+    # `.4f` they disagreed in the artifact a human reads to make the go/no-go
+    # call: `p = 4.3e-06` above, `p=0.0000` below. A p that reads as exactly
+    # zero is a claim no finite-sample test can make.
+    payload = run(signal_snapshot, tmp_path, seed=0)
+    report = (tmp_path / "report.md").read_text()
+
+    p_value = payload["regimes"][REGIME1]["p_value"]
+    # Precondition: small enough that a `.4f` really would round it to zero.
+    assert p_value < 1e-4, p_value
+    assert "0.0000" not in report
+
+    # Both renderings present, and identical.
+    assert report.count(format(p_value, ".4g")) >= 2
+
+
+# --- Review gap: --seed must reach everything it is supposed to ------------
+
+
+def test_the_seed_reaches_the_controls_the_grouped_split_and_the_record(
+    signal_snapshot, tmp_path
+):
+    # Three separate hardcodings of `seed=0` each survived the whole suite: into
+    # `run_controls`, into `regime2_grouped`, and into `payload["seed"]`. The
+    # last is the record that manifest-reproducibility depends on -- a run whose
+    # payload misreports its own seed cannot be reproduced from its artifact.
+    # Seed 3, not an arbitrary one: the run seed also seeds `label_shuffle`'s
+    # permutation, and that control voids the CLEAN signal world on 4 of the
+    # first 20 seeds (values landing at -0.100, -0.102, -0.145, +0.105 against
+    # a 0.10 tolerance). Same known, deliberately unfixed calibration issue as
+    # `brain_average`'s -- a control that fails closed on a boundary case --
+    # but it means a second seed has to be one that leaves the run VALID, or
+    # this test measures a voided payload's missing keys instead.
+    a = run(signal_snapshot, tmp_path / "a", seed=0)
+    b = run(signal_snapshot, tmp_path / "b", seed=3)
+
+    # Precondition, so a future change surfaces as this message rather than as
+    # a KeyError on `regimes` further down.
+    assert not a["voided"] and not b["voided"], "a seed voided the clean signal world"
+
+    # (1) the record
+    assert a["seed"] == 0 and b["seed"] == 3
+
+    # (2) the controls: label-shuffle permutes within creator off this seed
+    def shuffle_value(payload: dict) -> float:
+        return next(c["value"] for c in payload["controls"] if c["name"] == "label_shuffle")
+
+    assert shuffle_value(a) != shuffle_value(b), "the seed does not reach run_controls"
+
+    # (3) the grouped split: a different seed holds out different creators
+    assert (
+        a["regimes"][REGIME2]["rungs"]["B3"]["rho"]
+        != b["regimes"][REGIME2]["rungs"]["B3"]["rho"]
+    ), "the seed does not reach regime2_grouped"
+
+    # And the counterpart that says where it must NOT reach: Regime 1's split is
+    # purely temporal and takes no seed, so its point estimates are identical.
+    # (Only the bootstrap CI around them moves, which is resampling, not the
+    # split.) Without this, hardcoding the seed everywhere would also pass (2).
+    assert (
+        a["regimes"][REGIME1]["rungs"]["B3"]["rho"]
+        == b["regimes"][REGIME1]["rungs"]["B3"]["rho"]
+    )
+    assert (
+        a["regimes"][REGIME1]["rungs"]["B3"]["lo"]
+        != b["regimes"][REGIME1]["rungs"]["B3"]["lo"]
+    )
+
+
+# --- Review gap: byte-reproducibility, on the bytes -----------------------
+
+
+def _sha256(path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_two_runs_write_byte_identical_artifacts(signal_snapshot, tmp_path):
+    # The Global Constraint is BYTE-reproducibility. The brief's reproducibility
+    # test compares `json.dumps(..., default=str, sort_keys=True)` of two
+    # in-process payloads: `default=str` tolerates a value that is not
+    # serializable at all, `sort_keys=True` tolerates key-order drift, and the
+    # written files are never opened. This compares what actually ships.
+    run(signal_snapshot, tmp_path / "a", seed=0)
+    run(signal_snapshot, tmp_path / "b", seed=0)
+    for artifact in ("results.json", "report.md"):
+        assert _sha256(tmp_path / "a" / artifact) == _sha256(tmp_path / "b" / artifact), artifact
+
+
+def test_artifacts_are_identical_across_processes_and_hash_seeds(signal_snapshot, tmp_path):
+    # The in-process test above shares one interpreter, so it cannot see
+    # anything that varies with PYTHONHASHSEED -- and dict/set iteration order
+    # is exactly the kind of thing that reaches an artifact through a `" · "`
+    # join or a JSON key order. Two subprocesses with deliberately different
+    # hash seeds is the honest form of "reproducible from its manifest".
+    digests = []
+    for hash_seed in ("0", "12345"):
+        out = tmp_path / f"h{hash_seed}"
+        env = {**os.environ, "PYTHONHASHSEED": hash_seed}
+        proc = subprocess.run(
+            [sys.executable, "-m", "eval", "run", "--snapshot", str(signal_snapshot),
+             "--out", str(out)],
+            cwd=str(ROOT), env=env, capture_output=True, text=True,
+        )
+        assert proc.returncode == 0, proc.stderr
+        digests.append({a: _sha256(out / a) for a in ("results.json", "report.md")})
+    assert digests[0] == digests[1]
 
 
 # --- The Leaky world: corrupt splits, fired from inside the pipeline -------
