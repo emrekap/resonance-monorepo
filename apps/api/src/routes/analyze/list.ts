@@ -69,10 +69,12 @@ export const listAnalyses = new Hono<AuthEnv>().get('/', zValidator('query', que
       where,
       // Always a pair. Under offset paging the second key is load-bearing:
       // `completedAt` is null for every unfinished row and `resonanceScore` is
-      // null for every row until calibration ships, so without a deterministic
-      // tiebreak Postgres may order equal rows differently between two
-      // requests and page 2 repeats one row while skipping another. `id` is a
-      // UUIDv7, so `id desc` is also a sane creation-order fallback.
+      // null for every row a workspace made before its fifth (the score is a
+      // rank, and `apps/worker` withholds it until there is a history to rank
+      // against), so without a deterministic tiebreak Postgres may order equal
+      // rows differently between two requests and page 2 repeats one row while
+      // skipping another. `id` is a UUIDv7, so `id desc` is also a sane
+      // creation-order fallback.
       orderBy:
         sort === 'resonanceScore'
           ? [{ result: { resonanceScore: { sort: order, nulls: 'last' } } }, { id: 'desc' }]
