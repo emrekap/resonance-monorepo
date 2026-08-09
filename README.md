@@ -57,7 +57,8 @@ resonance-monorepo/
 │   ├── tsconfig/       Shared `@repo/tsconfig` bases (bun / nextjs / react-native)
 │   ├── eslint-config/  Shared `@repo/eslint-config`
 │   └── ml-client/      Placeholder — see packages/ml-client/README.md
-└── infra/              Docker (local Redis + bull-board), deploy
+├── infra/              Docker (local Redis + bull-board), deploy
+└── research/           Eval harness for the validation experiment (Python island; never deploys)
 ```
 
 ## Stack decisions
@@ -102,6 +103,9 @@ cp apps/ml/.env.example      apps/ml/.env        # HF_TOKEN + Redis
 # 4. the Python island — Bun/Turbo do not manage it, and `bun run test:ml` needs it
 cd apps/ml && python -m venv .venv && ./.venv/bin/pip install -r requirements-dev.txt
 
+# 4b. the second Python island — only needed to run the eval harness
+cd research && python -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+
 bun run docker:local        # 5. Redis
 ```
 
@@ -114,7 +118,7 @@ bun install                 # install + link workspaces
 turbo run build             # emit apps/api AppType d.ts
 turbo run typecheck         # typecheck all (builds first via ^build)
 turbo run lint              # eslint all
-bun run test                # turbo test + the apps/ml pytest suite (needs apps/ml/.venv)
+bun run test                # turbo test + the apps/ml and research pytest suites (needs their .venv)
 bun run format              # prettier
 
 # the analysis path, end to end — needs all four

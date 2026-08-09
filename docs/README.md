@@ -28,6 +28,11 @@ one-pager for the pitch; the four technical notes form a design appendix that re
    requires: metric, baseline, threshold and splits, locked before any test-set result is seen. The
    spec is the method; this is the commitment.
 
+The analysis those two describe is implemented in [`research/`](../research/) — built against
+synthetic data with known ground truth so the statistics could be tested before any real result
+existed. It enforces the prereg's leakage rules as assertions and computes the Green/Yellow/Red band
+mechanically.
+
 ## Build records
 
 `superpowers/` holds the dated design + implementation records for work that has since shipped.

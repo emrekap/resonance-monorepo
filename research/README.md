@@ -32,10 +32,10 @@ VOID the run). `run` writes `results.json` and `report.md` into `--out`.
 
 ### Exit codes
 
-| Code | Meaning                                                                                     |
-| ---- | ------------------------------------------------------------------------------------------- |
+| Code | Meaning                                                                                      |
+| ---- | -------------------------------------------------------------------------------------------- |
 | `0`  | A valid experiment ran. **GREEN, YELLOW and RED all exit 0** — RED is a result, not an error |
-| `2`  | **VOID** — a negative control failed, so the experiment itself was invalid                  |
+| `2`  | **VOID** — a negative control failed, so the experiment itself was invalid                   |
 
 VOID is separated from the bands deliberately. A CI job or shell script that only reads the exit
 status must not read an invalid run as a success; that is the fail-open shape this harness exists to
@@ -83,12 +83,12 @@ the inclusion threshold and is never a feature.
 
 ## Testing — four worlds
 
-| World            | Lives in                  | Harness must                                    |
-| ---------------- | ------------------------- | ------------------------------------------------ |
-| **Signal**       | `synth.SIGNAL_WORLD`      | return GREEN                                    |
-| **Null**         | `synth.NULL_WORLD`        | return RED                                      |
-| **Contaminated** | `synth.CONTAMINATED_WORLD`| catch it in a control and VOID the run          |
-| **Leaky**        | `tests/test_end_to_end.py`| fire the matching leakage assertion             |
+| World            | Lives in                   | Harness must                           |
+| ---------------- | -------------------------- | -------------------------------------- |
+| **Signal**       | `synth.SIGNAL_WORLD`       | return GREEN                           |
+| **Null**         | `synth.NULL_WORLD`         | return RED                             |
+| **Contaminated** | `synth.CONTAMINATED_WORLD` | catch it in a control and VOID the run |
+| **Leaky**        | `tests/test_end_to_end.py` | fire the matching leakage assertion    |
 
 Three of those are properties of the **data**, so `synth.py` builds them. Leaky is a property of the
 **split**, so there is no `LEAKY_WORLD`: the corrupt splits are built by hand in the tests and fed to

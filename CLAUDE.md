@@ -49,6 +49,7 @@ hand in `apps/ml/queue_contract.py` — **change one, change the other.**
 apps/    mobile (Expo RN) · web (Next.js, later) · api (Bun+Hono BFF) · ml (Python FastAPI + BullMQ worker) · worker (Bun, results → Postgres)
 packages/ db (Prisma) · queue (BullMQ contract) · api-contract (Hono RPC client) · tsconfig (@repo/tsconfig) · eslint-config (@repo/eslint-config) · ml-client (empty placeholder — the queue replaced the HTTP seam it was for; see its README)
 infra/   docker (local Redis + bull-board) · deploy
+research/ eval harness for the pre-registered validation experiment (Python island, never deploys)
 ```
 
 ## Code discovery — query the index FIRST
@@ -122,7 +123,8 @@ turbo run build             # emit apps/api AppType d.ts
 turbo run typecheck         # typecheck all (builds first via ^build)
 turbo run lint              # eslint all (type-aware; also builds first via ^build)
 turbo run dev               # run dev tasks
-bun run test                # turbo test + the apps/ml pytest suite (needs apps/ml/.venv)
+bun run test                # turbo test + the apps/ml and research pytest suites (needs their .venv)
+bun run test:research       # the eval harness suite (needs research/.venv)
 bun run format              # prettier
 
 # the analysis path, end to end — needs all four
@@ -214,6 +216,13 @@ score, just without tips). `GET /analyze/:id` returns the lot and the mobile res
 verdict → timeline → why → do-this. Unit-tested on both sides of the queue, including a shared
 fixture that catches api↔ml contract drift — **but no real clip has run through it end to end.**
 
+**Validation harness (done, synthetic-only):** `research/` implements the pre-registered analysis
+end to end — snapshot contract, synthetic ground-truth worlds, splits with the prereg's leakage
+rules as runtime assertions, the B0–B4 ladder, bootstrap + paired Wilcoxon, three negative controls
+that gate the run, and a mechanically-computed GREEN/YELLOW/RED verdict written to
+`results.json` + `report.md`. 164 tests. **No real cohort has ever run through it** — every number
+it has produced came from a world whose ground truth it generated itself.
+
 ## TODO
 
 **Blocking, and one of them blocks the honesty of everything else.**
@@ -253,9 +262,11 @@ fixture that catches api↔ml contract drift — **but no real clip has run thro
   each way; it is not in scope for the pre-registration.
 - **The calibration head** that would give `resonanceScore` an absolute meaning
   (`docs/resonance-model-design.md` §2), gated on `docs/validation-prereg.md`.
-- **Validation cohort acquisition** — the gating dependency for the whole experiment, and the item
-  with the least written about it. See `docs/validation-experiment-spec.md` §11a: YouTube gives no
-  source video files, so the corpus needs a paid or design-partner motion, not an ask.
+- **Validation cohort acquisition** — the gating dependency for the whole experiment. The _analysis_
+  is no longer a dependency: `research/` implements it against synthetic ground truth, so the day a
+  cohort lands the harness runs. What remains is acquisition. See
+  `docs/validation-experiment-spec.md` §11a: YouTube gives no source video files, so the corpus
+  needs a paid or design-partner motion, not an ask.
 
 **Also queued:** deploy images for `apps/worker` + the ml worker; a production Redis decision
 (shared instance, `noeviction`); Instagram/TikTok `PlatformProvider`s; Facebook/TikTok login
