@@ -3004,11 +3004,13 @@ whenever the predicted max is unique.
 
 ### Task 6 — statistics
 
-**6. A code comment asserted scipy behavior that does not hold on the version this harness runs.**
-The plan's comment read `# scipy raises on an all-zero difference vector`; on scipy 1.17.1 it instead
-returns `nan` with a `RuntimeWarning`. The guard the comment justified is still required, just for a
-different reason than stated. Shipped: the guard kept, the comment corrected to describe scipy's
-actual behavior.
+**6. A code comment asserted scipy behavior that does not hold, and the behavior is size-dependent
+rather than uniform.** The plan's comment read `# scipy raises on an all-zero difference vector`;
+scipy does not raise. Measured directly on scipy 1.17.1, `wilcoxon` on an all-zero difference vector
+returns p=1.0 for small n (≤10) and NaN for larger n (≥25). The `np.allclose` branch's return value
+of `1.0` was already correct; only its justification was wrong, and the branch exists to make the
+answer deterministic across cohort sizes, not to dodge an exception. Shipped: the guard kept, the
+comment corrected to describe scipy's actual, size-dependent behavior.
 
 ### Task 8 — the negative controls
 

@@ -103,8 +103,9 @@ cp apps/ml/.env.example      apps/ml/.env        # HF_TOKEN + Redis
 # 4. the Python island — Bun/Turbo do not manage it, and `bun run test:ml` needs it
 cd apps/ml && python -m venv .venv && ./.venv/bin/pip install -r requirements-dev.txt
 
-# 4b. the second Python island — only needed to run the eval harness
-cd research && python -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+# 4b. the second Python island — only needed to run the eval harness. `cd -`
+# first: step 4 left you in apps/ml, and `research` is relative to repo root.
+cd - && cd research && python -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 
 bun run docker:local        # 5. Redis
 ```
