@@ -38,6 +38,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import eval.cli
 from eval.cli import (
     EXIT_OK,
     EXIT_VOID,
@@ -788,3 +789,62 @@ def test_the_pipeline_rejects_an_unrecognised_split_name(signal):
     renamed = Split(name="regime1_temporal_v2", train=split.train, test=split.test)
     with pytest.raises(ValueError, match="unknown split name"):
         _evaluate_regime(signal, renamed, seed=0)
+
+
+# --- F6: controls run before the ladder is even COMPUTED, not just emitted --
+#
+# `test_contaminated_world_voids_the_run` asserts `payload["regimes"] == {}`,
+# which pins non-EMISSION: a refactor that computes `_evaluate_regime` first
+# and only *discards* the result on a failed control still produces
+# `regimes == {}` and passes that test. Prereg §7 commits to controls running
+# "before reading the primary result," so what actually has to be pinned is
+# call ORDER and, on a voided run, that `_evaluate_regime` is never INVOKED at
+# all — not just that its output never reaches the payload.
+
+
+def test_controls_run_before_evaluate_regime_is_ever_called(signal_snapshot, tmp_path, monkeypatch):
+    calls: list[str] = []
+    real_run_controls = eval.cli.run_controls
+    real_evaluate_regime = eval.cli._evaluate_regime
+
+    def spy_run_controls(*args, **kwargs):
+        calls.append("run_controls")
+        return real_run_controls(*args, **kwargs)
+
+    def spy_evaluate_regime(*args, **kwargs):
+        calls.append("_evaluate_regime")
+        return real_evaluate_regime(*args, **kwargs)
+
+    monkeypatch.setattr(eval.cli, "run_controls", spy_run_controls)
+    monkeypatch.setattr(eval.cli, "_evaluate_regime", spy_evaluate_regime)
+
+    payload = run(signal_snapshot, tmp_path, seed=0)
+
+    assert not payload["voided"]
+    # A valid run does compute both regimes -- this is not just "controls ran
+    # and nothing else did", it is "controls ran, THEN the ladder did".
+    assert calls.count("_evaluate_regime") == 2
+    assert calls[0] == "run_controls", calls
+    assert calls.index("run_controls") < calls.index("_evaluate_regime"), calls
+
+
+def test_evaluate_regime_is_never_called_at_all_on_a_voided_run(
+    contaminated_snapshot, tmp_path, monkeypatch
+):
+    calls: list[str] = []
+    real_evaluate_regime = eval.cli._evaluate_regime
+
+    def spy_evaluate_regime(*args, **kwargs):
+        calls.append("_evaluate_regime")
+        return real_evaluate_regime(*args, **kwargs)
+
+    monkeypatch.setattr(eval.cli, "_evaluate_regime", spy_evaluate_regime)
+
+    payload = run(contaminated_snapshot, tmp_path, seed=0)
+
+    assert payload["voided"]
+    # Not "the ladder's output never reached the payload" -- the ladder must
+    # never have been CALLED. A refactor that computes it and discards the
+    # result would leave `payload["regimes"] == {}` unchanged but this list
+    # non-empty.
+    assert calls == []

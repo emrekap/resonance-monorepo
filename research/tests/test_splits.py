@@ -103,3 +103,42 @@ def test_every_split_covers_disjoint_positions():
     posts = _posts()
     for split in (regime1_temporal(posts), regime2_grouped(posts, seed=0)):
         assert set(split.train).isdisjoint(set(split.test))
+
+
+def test_regime1_temporal_is_correct_on_a_permuted_index():
+    """F2: a permuted (non-RangeIndex) `posts` frame must yield the SAME split.
+
+    `regime1_temporal` derives each group's row positions via
+    `positions[group.index.to_numpy()]`, which is only a correct label ->
+    position lookup when `group.index` already equals row position — true
+    only if `posts` has a clean `RangeIndex` when `.groupby` is called on it.
+    `posts.reset_index(drop=True)` is what makes that true unconditionally;
+    without it, a caller whose frame has been reordered (`iloc[::-1]`,
+    `.sample()`, a join, ...) gets a DIFFERENT, WRONG split with no exception
+    -- exactly the "quietly worse split" failure class this harness exists to
+    catch, not a crash that would announce itself.
+
+    Compared by `post_id` set membership, not by raw position: the permuted
+    frames have the same rows at different positions, so position-for-position
+    equality is the wrong comparison and set-of-identity is the right one.
+    """
+    posts = _posts()
+    clean = regime1_temporal(posts)
+    clean_train_ids = set(posts["post_id"].to_numpy()[clean.train])
+    clean_test_ids = set(posts["post_id"].to_numpy()[clean.test])
+
+    permutations = {
+        "iloc[::-1]": posts.iloc[::-1],
+        "sample()": posts.sample(frac=1.0, random_state=0),
+    }
+    for name, permuted in permutations.items():
+        # Precondition: the permutation actually produced a non-RangeIndex
+        # frame, or this proves nothing.
+        assert not permuted.index.equals(posts.index), name
+
+        result = regime1_temporal(permuted)
+        result_train_ids = set(permuted["post_id"].to_numpy()[result.train])
+        result_test_ids = set(permuted["post_id"].to_numpy()[result.test])
+
+        assert result_train_ids == clean_train_ids, name
+        assert result_test_ids == clean_test_ids, name

@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from eval.snapshot import (
+    MANIFEST_FILE,
     SNAPSHOT_VERSION,
     SnapshotError,
     load_snapshot,
@@ -44,6 +45,58 @@ def test_round_trip_preserves_rows_and_features(tmp_path):
     assert snap.manifest["seed"] == 7
     np.testing.assert_array_equal(snap.text, text)
     np.testing.assert_array_equal(snap.neuro, neuro)
+    # Ledger minor #3: the round trip must preserve `published_at`'s dtype, not
+    # just its values. `assert_time_order` (eval.splits) compares it with `>`
+    # and `regime1_temporal` sorts on it — both depend on it staying a genuine
+    # datetime64 column through a parquet write/read, not silently degrading to
+    # object dtype (which would still compare, just not the way either
+    # assumes).
+    assert pd.api.types.is_datetime64_any_dtype(snap.posts["published_at"])
+    assert snap.posts["published_at"].dtype == posts["published_at"].dtype
+
+
+def test_null_published_at_is_refused(tmp_path):
+    # F1: `regime1_temporal`'s `np.argsort` sorts NaT last (into the *test*
+    # slice) and `assert_time_order`'s `latest_train > earliest_test` is False
+    # against NaT either way it's compared — so a null-dated post used to sail
+    # through the leakage guard instead of tripping it. `synth.py` never emits
+    # NaT, but the documented second producer (a Postgres extract, where
+    # `published_at` is nullable) could. Closing this in `_validate` means no
+    # producer can ever hand the pipeline a snapshot with the hole open.
+    posts = _posts()
+    posts.loc[0, "published_at"] = pd.NaT
+    text = np.zeros((6, 4), dtype=np.float32)
+    neuro = np.zeros((6, 8), dtype=np.float32)
+
+    with pytest.raises(SnapshotError, match="published_at"):
+        write_snapshot(tmp_path, posts, text, neuro, producer="synthetic", seed=0)
+
+
+def test_a_null_published_at_that_used_to_fail_open_now_raises_before_any_split(tmp_path):
+    """Pin the fail-open behaviour closed, on the exact shape that used to slip through.
+
+    Before the `_validate` fix, this frame did not raise anywhere: `write_snapshot`
+    wrote it, `load_snapshot` loaded it, `regime1_temporal` placed creator "a"'s
+    null-dated post in the *test* slice (NaT sorts last), and `assert_time_order`
+    then approved the split because every NaT comparison is False. Now the first
+    of those steps — `write_snapshot` — refuses the frame outright, so a split
+    with this shape can never be produced by the documented input path at all.
+    """
+    posts = _posts()
+    # Creator "a" is rows 0-2; give its LATEST-by-position post (which
+    # `regime1_temporal` would otherwise place in train, since NaT sorts last
+    # and would instead land it in test) a null date, so the corrupted split
+    # this used to slip into is the split a fixed guard must never produce.
+    posts.loc[2, "published_at"] = pd.NaT
+    text = np.zeros((6, 4), dtype=np.float32)
+    neuro = np.zeros((6, 8), dtype=np.float32)
+
+    with pytest.raises(SnapshotError, match="published_at"):
+        write_snapshot(tmp_path, posts, text, neuro, producer="synthetic", seed=0)
+
+    # And the snapshot directory must be left as if nothing had been written —
+    # no partial artifact for a caller to accidentally load and treat as valid.
+    assert not (tmp_path / MANIFEST_FILE).exists()
 
 
 def test_missing_required_column_is_refused(tmp_path):

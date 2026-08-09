@@ -119,6 +119,12 @@ Sketch, for whoever writes it:
   always already eligible.
 - `post_labels.split_tag` exists so the train/test rule is checkable in SQL. Once both exist,
   reconcile this package's splits against it rather than letting them disagree silently.
+- `posts.published_at` must be non-null for every row the extract emits. `snapshot._validate` now
+  refuses any required column with a null (F1 — a null `published_at` used to sort last in
+  `regime1_temporal` and slip past `assert_time_order`'s guard, landing a null-dated post in test
+  without tripping the leakage check), so a Postgres row with a null date must be excluded or
+  backfilled upstream of `write_snapshot`, not passed through and left to be silently accepted by a
+  now-nonexistent hole.
 
 ## Conventions
 

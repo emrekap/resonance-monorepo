@@ -1,7 +1,10 @@
 import numpy as np
 import pytest
+from sklearn.linear_model import Ridge
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
-from eval.ladder import RUNGS, features_for, fit_predict
+from eval.ladder import RIDGE_ALPHA, RUNGS, features_for, fit_predict
 from eval.metrics import per_creator_spearman
 from eval.normalize import WithinCreatorNormalizer
 from eval.snapshot import Snapshot
@@ -90,6 +93,55 @@ def test_b0_has_no_within_creator_rank_signal(snap):
 
     result = per_creator_spearman(snap.posts, split.test, y_test_true, predictions)
     assert result == {}
+
+
+def test_the_feature_scaler_is_fit_on_train_rows_only(snap):
+    """F3: `fit_predict`'s `StandardScaler` (inside `make_pipeline`) must never
+    see test rows during `.fit`. The label normalizer next to it
+    (`WithinCreatorNormalizer`) gets a fingerprint and `assert_fit_disjoint_from`
+    guarding exactly this; the feature scaler had nothing, and the mutation
+    that survived the whole suite --
+
+        features = StandardScaler().fit_transform(features)   # ALL rows
+        model.fit(features[split.train], y_train)
+
+    -- is the textbook version of the leak this harness exists to catch:
+    letting the scaler's mean/scale see the test distribution lets test-set
+    information leak into the standardized TRAIN features it fits on.
+
+    No new production code: this builds the two pipelines the mutation
+    switches between, using the exact same sklearn primitives `ladder.py`
+    does, and checks `fit_predict`'s real output against each. B4 (the widest
+    feature matrix) is used because it gives the largest, most robustly
+    non-floating-point-noise separation between "fit on train only" and "fit
+    on everything" (measured: max abs prediction difference ~1e-4 on B4 vs
+    ~1e-6 on B1) -- see the precondition assertion below, which fails loudly
+    if that separation ever collapses instead of silently proving nothing.
+    """
+    split = regime1_temporal(snap.posts)
+    y_train = WithinCreatorNormalizer().fit(snap.posts, split.train).transform(
+        snap.posts, split.train
+    )
+    features = features_for("B4", snap)
+
+    train_only = make_pipeline(StandardScaler(), Ridge(alpha=RIDGE_ALPHA))
+    train_only.fit(features[split.train], y_train)
+    train_only_pred = train_only.predict(features[split.test])
+
+    # The mutant: scaler fit on train+test, THEN sliced to train for the model fit.
+    leaky_features = StandardScaler().fit_transform(features)
+    leaky_model = Ridge(alpha=RIDGE_ALPHA)
+    leaky_model.fit(leaky_features[split.train], y_train)
+    leaky_pred = leaky_model.predict(leaky_features[split.test])
+
+    # Precondition: on this split, the two standardizations must produce
+    # measurably different predictions, or the assertions below would pass
+    # for the wrong reason (both references coinciding by chance).
+    assert np.max(np.abs(train_only_pred - leaky_pred)) > 1e-6
+
+    actual = fit_predict("B4", snap, split, y_train)
+    np.testing.assert_allclose(actual, train_only_pred, rtol=1e-8, atol=1e-10)
+    assert not np.allclose(actual, leaky_pred, rtol=1e-8, atol=1e-10)
 
 
 def test_fit_predict_rejects_mismatched_y_train_length(snap):

@@ -33,14 +33,34 @@ def regime1_temporal(posts: pd.DataFrame, *, test_fraction: float = 0.2) -> Spli
     Per creator, train on the older posts and test on the most recent
     `test_fraction`. Mirrors production ("score my next post") and blocks
     temporal leakage.
+
+    F7: an exact `published_at` TIE straddling the train/test boundary is not
+    a leak `assert_time_order` will catch — it uses `latest_train >
+    earliest_test`, a strict `>`, so a training post published at the same
+    instant as a test post passes. Which tie-mate lands in train vs test is
+    then decided by `np.argsort(..., kind="stable")`'s row-order tie-break
+    here, not by anything about the posts themselves. Defensible against the
+    prose this guards ("never train on a post published *after* the test
+    post" — equal is not after), and `synth.py` draws day-granularity dates
+    so ties already occur in the synthetic worlds without incident; left as
+    `>` deliberately, not tightened to `>=`.
     """
-    # group.index.to_numpy() below is used to subscript positions, an
-    # identity-mapped array (positions[i] == i). That is only a correct
-    # label -> position lookup when posts has a clean RangeIndex, so pin
-    # that here rather than assume every caller already has one: it makes
-    # the position math correct regardless of the input's index, and is a
-    # no-op (same row order, same values) for the RangeIndex inputs this
-    # already receives (the test fixture, and snapshot.load_snapshot(...).posts).
+    # `positions[group.index.to_numpy()]` below reads `group.index` as if it
+    # already equals row position (0..len(posts)-1) — true only when `posts`
+    # carries a clean RangeIndex at the point `.groupby` runs, which THIS line
+    # guarantees for every caller, not just the ones that already happen to
+    # pass one in (the test fixture, `snapshot.load_snapshot(...).posts`).
+    # Do not read `positions = np.arange(len(posts))` below as decoration to
+    # strip out along with this line: `positions[x] == x` for any in-range
+    # `x`, so that indirection is not independently what makes a permuted
+    # frame correct — but the lookup's correctness still depends on THIS
+    # reset having already run, and the risk is a maintainer who reads the
+    # indirection as dead code and, on that same reasoning, also removes the
+    # reset. A permuted-index frame (`posts.iloc[::-1]`, `.sample()`, a join,
+    # ...) then silently produces a DIFFERENT, WRONG split — no exception, no
+    # warning. `test_regime1_temporal_is_correct_on_a_permuted_index` pins
+    # against exactly that; see its docstring for the fuller version of this
+    # note.
     posts = posts.reset_index(drop=True)
 
     train_parts: list[np.ndarray] = []

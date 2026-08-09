@@ -79,6 +79,24 @@ def _validate(posts: pd.DataFrame, text: np.ndarray, neuro: np.ndarray) -> None:
     if missing:
         raise SnapshotError(f"posts is missing required columns: {', '.join(missing)}")
 
+    # A null in any required column is a malformed snapshot, not something a
+    # downstream consumer should have to guard against. `published_at` is the
+    # sharp case: `regime1_temporal`'s `np.argsort` sorts NaT last (so a
+    # null-dated post lands in the *test* slice, the most recent one) and
+    # `assert_time_order`'s `latest_train > earliest_test` is False against
+    # NaT in both directions, so a null-dated post used to sail through the
+    # leakage guard rather than trip it — the fail-open failure class this
+    # harness exists to catch. Rejecting every required column's nulls here,
+    # once, at the one input path every producer shares (see the module
+    # docstring), closes that hole for `published_at` and for whichever other
+    # column the next producer (the Postgres extract) leaves nullable, without
+    # inventing any schema rule beyond "required columns contain no nulls".
+    null_columns = [c for c in REQUIRED_COLUMNS if posts[c].isna().any()]
+    if null_columns:
+        raise SnapshotError(
+            f"posts has null values in required column(s): {', '.join(null_columns)}"
+        )
+
     n = len(posts)
     if text.shape[0] != n or neuro.shape[0] != n:
         raise SnapshotError(
