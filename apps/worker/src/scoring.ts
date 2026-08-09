@@ -110,6 +110,25 @@ export function composite(bands: AxisBands): number {
 }
 
 /**
+ * Turns a continuous rank into a 0–100 score — the **Weibull plotting position**.
+ *
+ * `pos` is where the clip sits on the 0..n-1 axis of sorted priors, so the
+ * obvious scaling is `pos / (n - 1)`. That is what this used to do, and it pins
+ * the smallest prior to exactly 0 and the largest to exactly 100 by
+ * construction: a clip better than everything a creator has made scored 100 —
+ * "top 0% of your posts" — off as few as five data points.
+ *
+ * `(pos + 1) / (n + 1)` says the defensible thing instead. Beating 5 of 5 priors
+ * is evidence you rank above 5 of 6, not above everything you might ever post.
+ * The reachable band tightens as history grows — 17–83 at five priors, 0.5–99.5
+ * at the 200-row cap `apps/worker` reads history under — which is the honest
+ * shape: 200 clips can nearly justify a 100, five cannot.
+ */
+function plot(pos: number, n: number): number {
+  return ((pos + 1) / (n + 1)) * 100;
+}
+
+/**
  * Where `value` falls in the distribution of `history`, as 0–100.
  *
  * **Linear-interpolated ECDF, not a raw count.** A count is the obvious
@@ -120,6 +139,7 @@ export function composite(bands: AxisBands): number {
  *
  * Interpolating between the two bracketing values gives a continuous score from
  * the fifth analysis onward, and converges on the plain rank as history grows.
+ * The endpoints are handled by {@link plot} rather than saturating at 0 and 100.
  *
  * Ties and degenerate history (every prior identical) return 50: a clip that
  * matches everything it is compared against is exactly typical, which is what
@@ -127,23 +147,35 @@ export function composite(bands: AxisBands): number {
  * on screen as "worst" for a clip that was in fact average.
  */
 export function percentile(value: number, history: readonly number[]): number {
-  if (history.length === 0) return 0;
+  // Unreachable through scoreAnalysis, which guards on MIN_HISTORY. 50 rather
+  // than 0 for the same reason the flat-history case below returns 50: with
+  // nothing to rank against, the middle is the only answer that does not assert
+  // "good" or "bad" about a clip nobody has measured.
+  if (history.length === 0) return 50;
 
   const sorted = [...history].sort((a, b) => a - b);
+  const n = sorted.length;
   const lowest = sorted[0] as number;
-  const highest = sorted[sorted.length - 1] as number;
+  const highest = sorted[n - 1] as number;
 
-  if (highest - lowest < Number.EPSILON) return value === lowest ? 50 : value > lowest ? 100 : 0;
-  if (value <= lowest) return 0;
-  if (value >= highest) return 100;
+  // Every prior identical: there is no range to place the value inside, only
+  // three answers — under it, on it, over it.
+  if (highest - lowest < Number.EPSILON) {
+    if (value > lowest) return plot(n - 1, n);
+    if (value < lowest) return plot(0, n);
+    return 50;
+  }
+
+  if (value <= lowest) return plot(0, n);
+  if (value >= highest) return plot(n - 1, n);
 
   // Position on the 0..n-1 axis of sorted priors, interpolated within whichever
-  // pair brackets `value`, then rescaled to 0..100.
+  // pair brackets `value`.
   const upper = sorted.findIndex((prior) => prior > value);
   const lower = upper - 1;
   const span = (sorted[upper] as number) - (sorted[lower] as number);
   const offset = span < Number.EPSILON ? 0 : (value - (sorted[lower] as number)) / span;
-  return ((lower + offset) / (sorted.length - 1)) * 100;
+  return plot(lower + offset, n);
 }
 
 /**

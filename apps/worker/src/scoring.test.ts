@@ -36,23 +36,44 @@ const ladder = (n: number): AxisBands[] =>
   Array.from({ length: n }, (_, index) => bands({ visual: index, audio: index, language: index }));
 
 describe('percentile', () => {
-  test('pins the ends of the observed range', () => {
-    expect(percentile(5, [1, 2, 3, 4])).toBe(100);
-    expect(percentile(9, [1, 2, 3, 4])).toBe(100);
-    expect(percentile(0, [1, 2, 3, 4])).toBe(0);
-    expect(percentile(1, [1, 2, 3, 4])).toBe(0);
+  test('never claims 0 or 100 — beating every prior ranks n of n+1', () => {
+    // Four priors, so the reachable band is 1/5..4/5. "Top 0% of your posts"
+    // off four data points is a claim the data cannot support.
+    expect(percentile(5, [1, 2, 3, 4])).toBeCloseTo(80);
+    expect(percentile(9, [1, 2, 3, 4])).toBeCloseTo(80);
+    expect(percentile(0, [1, 2, 3, 4])).toBeCloseTo(20);
+    expect(percentile(1, [1, 2, 3, 4])).toBeCloseTo(20);
+  });
+
+  test('the reachable band tightens as history grows', () => {
+    // The same clip — better than everything — earns a stronger claim the more
+    // history stands behind it. This is the property the plotting position buys.
+    const best = (n: number) =>
+      percentile(
+        n + 1,
+        Array.from({ length: n }, (_, index) => index),
+      );
+
+    expect(best(5)).toBeCloseTo((5 / 6) * 100);
+    expect(best(20)).toBeCloseTo((20 / 21) * 100);
+    expect(best(200)).toBeCloseTo((200 / 201) * 100);
+    expect(best(5)).toBeLessThan(best(20));
+    expect(best(20)).toBeLessThan(best(200));
+    expect(best(200)).toBeLessThan(100);
   });
 
   test('lands on the plain rank when the value sits on a prior', () => {
-    expect(percentile(2, [1, 2, 3, 4])).toBeCloseTo(100 / 3);
-    expect(percentile(3, [1, 2, 3, 4])).toBeCloseTo(200 / 3);
+    expect(percentile(2, [1, 2, 3, 4])).toBeCloseTo(40);
+    expect(percentile(3, [1, 2, 3, 4])).toBeCloseTo(60);
   });
 
   test('interpolates between priors instead of stepping', () => {
     // The whole point of #2: with 5 priors a raw count gives only 0/20/…/100.
     const history = [0, 1, 2, 3, 4];
     const scores = [0.5, 1.5, 2.5, 3.5].map((value) => percentile(value, history));
-    expect(scores).toEqual([12.5, 37.5, 62.5, 87.5]);
+    [25, 250 / 6, 350 / 6, 75].forEach((expected, index) =>
+      expect(scores[index] as number).toBeCloseTo(expected),
+    );
     // Every value distinct — a counting implementation would repeat.
     expect(new Set(scores).size).toBe(scores.length);
   });
@@ -66,12 +87,13 @@ describe('percentile', () => {
   test('a clip matching an entirely flat history is typical, not worst', () => {
     // Previously returned 0, which rendered as "worst" for an average clip.
     expect(percentile(2, [2, 2, 2, 2])).toBe(50);
-    expect(percentile(3, [2, 2, 2, 2])).toBe(100);
-    expect(percentile(1, [2, 2, 2, 2])).toBe(0);
+    expect(percentile(3, [2, 2, 2, 2])).toBeCloseTo(80);
+    expect(percentile(1, [2, 2, 2, 2])).toBeCloseTo(20);
   });
 
-  test('is 0 on empty history rather than dividing by zero', () => {
-    expect(percentile(1, [])).toBe(0);
+  test('is 50 on empty history rather than dividing by zero', () => {
+    // Unreachable via scoreAnalysis; 50 because "no history" is not "worst".
+    expect(percentile(1, [])).toBe(50);
   });
 });
 
@@ -117,7 +139,8 @@ describe('scoreAnalysis cold start', () => {
       hasSpeech: true,
     });
 
-    expect(scored.resonanceScore).toBe(100);
+    // Better than all 5 priors ranks 5 of 6 — 83, not a 100 the history cannot back.
+    expect(scored.resonanceScore).toBe(83);
     expect(scored.axisRows).toHaveLength(5);
   });
 });
@@ -131,11 +154,11 @@ describe('scoreAnalysis', () => {
       hasSpeech: true,
     });
 
-    // Value 5 against priors 0..9 sits 5/9 of the way along the observed range.
-    expect(scored.percentileInChannel).toBeCloseTo((5 / 9) * 100);
+    // Value 5 against priors 0..9: rank 5 of 10, plotted at 6/11.
+    expect(scored.percentileInChannel).toBeCloseTo((6 / 11) * 100);
     expect(scored.resonanceScore).toBe(Math.round(scored.percentileInChannel as number));
     // The property that matters: one rank, two presentations — never two numbers.
-    expect(scored.resonanceScore).toBe(56);
+    expect(scored.resonanceScore).toBe(55);
   });
 
   test('emits axes in position order matching the enum', () => {
@@ -168,8 +191,12 @@ describe('scoreAnalysis', () => {
       hasSpeech: true,
     });
 
-    expect(scored.axisRows[0]?.score).toBe(100);
-    expect(scored.axisRows[1]?.score).toBe(0);
+    expect(scored.axisRows[0]?.score).toBeCloseTo((10 / 11) * 100);
+    expect(scored.axisRows[1]?.score).toBeCloseTo((1 / 11) * 100);
+    // Still the two ends of the range — just not 100 and 0.
+    expect(scored.axisRows[0]?.score as number).toBeGreaterThan(
+      scored.axisRows[1]?.score as number,
+    );
   });
 
   test('downgrades CLARITY to BETA when the clip has no speech', () => {
