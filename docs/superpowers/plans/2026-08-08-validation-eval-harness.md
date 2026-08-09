@@ -1,6 +1,14 @@
 # Validation Eval Harness Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **Corrected during execution.** Fifteen defects were found in this document while it was being
+> implemented — code listings and tests that were plausible but wrong, each one caught by running the
+> code rather than by reading it. All fifteen were fixed in the code that shipped; this document's
+> task bodies were left as originally written, because the plan is a historical record of what was
+> planned, not a description of what runs. Where this plan and `research/` disagree, **the code in
+> `research/` is correct.** See "Corrections applied during execution" at the end of this file for the
+> full list, each entry naming what the plan said, what was wrong with it, and what shipped instead.
 
 **Goal:** Build the reproducible eval harness for the pre-registered validation experiment in a new
 top-level `research/` directory, against synthetic data with known ground truth, before the cohort
@@ -426,6 +434,8 @@ git commit -m "feat(research): scaffold eval harness and the snapshot format"
 
 ### Task 2: The synthetic ground-truth generator
 
+> **Corrected during execution — see Corrections #1.**
+
 **Files:**
 
 - Create: `research/eval/synth.py`
@@ -759,6 +769,8 @@ git commit -m "feat(research): synthetic ground-truth world generator"
 ---
 
 ### Task 3: Splits and the leakage assertions
+
+> **Corrected during execution — see Corrections #2, #3.**
 
 **Files:**
 
@@ -1196,6 +1208,8 @@ git commit -m "feat(research): within-creator normalizer with fit-provenance gua
 
 ### Task 5: Metrics — per-creator Spearman, pairwise accuracy, top-1
 
+> **Corrected during execution — see Corrections #4, #5.**
+
 **Files:**
 
 - Create: `research/eval/metrics.py`
@@ -1409,6 +1423,8 @@ git commit -m "feat(research): per-creator Task A metrics"
 ---
 
 ### Task 6: Statistics — bootstrap over creators, paired Wilcoxon, uplift
+
+> **Corrected during execution — see Corrections #6.**
 
 **Files:**
 
@@ -1782,6 +1798,8 @@ git commit -m "feat(research): model ladder B0-B4"
 
 ### Task 8: The negative controls that gate the run
 
+> **Corrected during execution — see Corrections #7.**
+
 **Files:**
 
 - Create: `research/eval/controls.py`
@@ -2000,6 +2018,8 @@ git commit -m "feat(research): label-shuffle and brain-average negative controls
 
 ### Task 9: The verdict, computed with Red-first precedence
 
+> **Corrected during execution — see Corrections #8.**
+
 **Files:**
 
 - Create: `research/eval/verdict.py`
@@ -2167,6 +2187,8 @@ git commit -m "feat(research): mechanical verdict with Red-first precedence"
 ---
 
 ### Task 10: The report
+
+> **Corrected during execution — see Corrections #9, #10, #11.**
 
 **Files:**
 
@@ -2389,6 +2411,8 @@ git commit -m "feat(research): results.json and the markdown report"
 ---
 
 ### Task 11: The pipeline, the CLI, and the four-world end-to-end tests
+
+> **Corrected during execution — see Corrections #12, #13, #14, #15.**
 
 **Files:**
 
@@ -2920,3 +2944,157 @@ passes `split.test` with arrays built from `[split.test]` accordingly; `Interval
 only by `stats.py` and consumed by `verdict.py` and Task 11; `ControlResult` fields
 (`name`/`passed`/`detail`/`value`) match the payload dict Task 10's report reads; `RUNGS` and
 `BASELINE_RUNGS` are defined once in Task 7 and imported by Task 11.
+
+## Corrections applied during execution
+
+Fifteen defects were found in this document's task bodies while they were being implemented, listed
+below in the order they were found. **The through-line: every one of the fifteen produced a _better
+or more plausible_ number rather than an error or a crash** — a silently wrong split, a silently
+inflated uplift, a report that renders successfully with the wrong content, a test that passes for a
+reason unrelated to what it claims to check. That is exactly why a green test suite did not catch any
+of them on its own, and why the practice that did catch all fifteen — running the plan's own code
+before dispatching it, not just reading it — earned its place as standard procedure partway through
+this plan's execution. Every one was fixed in the code that shipped; this section is the record of
+what was wrong, not a fix applied to the text above. See also the inline
+`> **Corrected during execution**` notes under the affected task headings, and the header warning at
+the top of this file.
+
+### Task 2 — the synthetic ground-truth generator
+
+**1. Sort permutation captured after the index reset, silently decoupling feature rows from posts.**
+The plan's `generate()` computed the row-sort permutation (`order`) _after_ calling
+`reset_index(drop=True)`, which had already collapsed the frame's index to a fresh identity range —
+so `order` captured nothing and every feature row silently lost its correspondence to its `post_id`.
+Measured: signal-world within-creator ρ was **0.739** with the fix applied vs. **−0.045** with the
+plan's literal code, which would have failed the design spec's own `>0.30` fidelity test. Shipped:
+capture `order` _before_ the `reset_index` call.
+
+### Task 3 — splits and the leakage assertions
+
+**2. The time-order guard's own test never violated time order.** The plan's
+`test_time_order_guard_fires_on_a_corrupted_split` swapped `train[-1]`/`test[0]` to construct a
+violation, but in the fixture's block-contiguous layout those two positions belong to _different_
+creators — so the swap never actually violated time order within a creator, the guard correctly
+stayed silent, and the test passed regardless of whether the guard worked. Shipped: swap
+`train[0]`/`test[1]` instead (same creator, a genuine violation), which fails without the guard and
+passes with it.
+
+**3. `regime1_temporal` subscripted a positional array using index labels.** The plan's
+implementation did `positions[group.index.to_numpy()]` — using index _labels_ to index into a
+_positional_ array, correct only when the frame's index happens to be an untouched `RangeIndex`. On
+any permuted index it returns a different, wrong split with no exception. Shipped:
+`posts.reset_index(drop=True)` before deriving positions — a no-op on `RangeIndex` input, corrective
+on a permuted one.
+
+### Task 5 — metrics
+
+**4. Pairwise accuracy scored a tied prediction as a definite, wrong ordering.** The plan's
+`per_creator_pairwise_accuracy` used `y_pred[i] > y_pred[j]`, which is `False` on a tie — so a
+genuinely tied prediction pair was scored as though it had confidently picked the wrong order.
+Measured: with a fixed multiset and a _constant_ `y_pred`, permuting row order alone moved the metric
+across 0.833 / 0.167 / 1.000 / 0.000. Shipped: 0.5 credit for a predicted tie, the AUC / Kendall
+tau-b convention.
+
+**5. Top-1 accuracy was decided by row order via `argmax`'s tie-break.** The plan's
+`per_creator_top1` used `np.argmax`, whose first-occurrence tie-break makes the score a hard 0 or 1
+chosen by row order rather than by the prediction itself. The same fixture as #4 showed the score
+flip between 0.0 and 1.0 under a constant prediction, depending only on row order. Shipped: expected
+credit under uniform random tie-breaking — a strict generalization, identical to the old behavior
+whenever the predicted max is unique.
+
+### Task 6 — statistics
+
+**6. A code comment asserted scipy behavior that does not hold on the version this harness runs.**
+The plan's comment read `# scipy raises on an all-zero difference vector`; on scipy 1.17.1 it instead
+returns `nan` with a `RuntimeWarning`. The guard the comment justified is still required, just for a
+different reason than stated. Shipped: the guard kept, the comment corrected to describe scipy's
+actual behavior.
+
+### Task 8 — the negative controls
+
+**7. `brain_average_control` passed when it could not be evaluated, and was one-sided.** The plan's
+predicate, `passed = not (isfinite(rho) and rho >= ceiling)`, makes a NaN `rho` satisfy
+`not (False and ...) = True` — the control _passes_ exactly when it cannot be evaluated, the same
+"gate opens when it can't be evaluated" failure class this harness exists to catch elsewhere. It was
+also one-sided (`rho >= ceiling`), so a strongly _anti_-predictive average (`rho = -0.5`) passed
+despite being just as exploitable via a sign flip — and the plan's own test already asserted the
+two-sided `abs(value) < 0.10`, disagreeing with the predicate it was meant to test. Shipped:
+`bool(np.isfinite(rho)) and abs(rho) < ceiling`, fail-closed and two-sided. Separately, the plan's
+`test_label_shuffle_catches_a_leaked_label` could not pass at all — label-shuffle is a _procedural_
+leakage detector and structurally cannot see a feature column that literally _is_ the label, since
+permuting the label destroys the model's ability to exploit that column exactly as much regardless of
+whether the association was legitimate or a leak. A third control, `feature_label_leak_control`, was
+added to close that gap directly.
+
+### Task 9 — the verdict
+
+**8. The Red-precedence test did not discriminate the ordering it claimed to test.** The plan's
+`test_red_takes_precedence_even_over_a_green_sized_point_estimate` used
+`Interval(0.22, -0.03, 0.47)` with `p_value=0.06` — RED under _both_ orderings of the precedence
+rules, because `p=0.06` already fails `p < 0.05` on its own, so the GREEN branch never fires
+regardless of whether RED is checked first. Shipped: `p_value=0.01`, an input whose band genuinely
+depends on RED being checked before GREEN.
+
+### Task 10 — the report
+
+**9. The VOID-report test was inert.** The plan's `test_voided_report_says_so_and_shows_no_verdict_band`
+asserted `"VOID" in report` and `"still predicts" in report`, both satisfied without the void
+early-return branch existing at all: `"VOID"` comes from the header, built directly from the payload,
+and `"still predicts"` from the controls list rendered _above_ the branch; the test's own fixture also
+set `regimes={}`, so the loop the branch was meant to suppress had nothing to emit regardless. Measured:
+with non-empty regimes attached and the branch deleted, a headline number (0.190) leaked into a report
+titled VOID. Shipped: void state computed once and driving both the header and the branch, with a
+test that attaches non-empty regimes to a voided payload and asserts no numeric verdict content
+appears.
+
+**10. `results.json` was not valid JSON whenever a value was NaN.** `json.dumps` emits a bare,
+non-standard `NaN` token; Python's own lenient `json.loads` accepts it back, so the plan's round-trip
+test passed, but jq, JS, Go and Rust all reject the file under strict parsing. NaN is a guaranteed
+state here, not a hypothetical: B0's rung is `mean_over_creators({}) == nan` by design, so a VOID
+run's uplift is NaN throughout, and the diligence artifact becomes unparseable exactly when the run
+is most interesting to inspect. Shipped: non-finite values serialize to JSON `null` — not
+`allow_nan=False`, which would raise on a legitimate VOID or cold-start run instead of still producing
+an artifact.
+
+**11. `default=str` silently mistyped numpy scalars.** The plan's JSON-safety fallback,
+`default=str`, happens to work for `np.float64` (a genuine `float` subclass) but silently
+stringifies `np.int64` and `np.bool_`, neither of which is an `int`/`bool` subclass. Measured output:
+`{"i": "1000", "b": "True"}` — a number turned into a quoted string with no error. That floats survive
+makes it worse, not better: it works on the fields a human is likely to spot-check and corrupts the
+ones they don't. Shipped: numpy scalars converted to native Python types explicitly; anything still
+unserializable now raises instead of silently stringifying.
+
+### Task 11 — the pipeline, the CLI, and the four-world end-to-end tests
+
+**12. The "four-world" end-to-end tests only covered three worlds.** Task 11 is titled around four
+worlds — Signal / Null / Leaky / Contaminated, per the design spec's own table, where "Leaky" means a
+deliberately corrupted split meant to fire the matching leakage assertion — but the plan's `synth.py`
+defines only three worlds and its tests exercise three. The consequence reached beyond a missing
+fixture: Task 3 had unit-tested the leakage-assertion _functions_ directly, but nothing tested that
+the _pipeline calls them_ — deleting all three assertion calls from `_evaluate_regime` still passed
+every pre-existing test, so the leakage rules were decorative at the integration level. Shipped:
+`_evaluate_regime` calls `assert_time_order` and `assert_no_creator_overlap` itself, proven by
+end-to-end tests that corrupt a split and show the call site — not just the assertion function —
+fires.
+
+**13. Baseline selection under NaN disagreed with its own test, in the direction that flatters the
+result.** `max(BASELINE_RUNGS, key=...)` resolves every NaN comparison to `False`, so `max` keeps
+whichever rung is listed _first_ regardless of value — the plan's own code picked B1 in all three NaN
+cases exercised, while the plan's own test expected `"B1" if b1 >= b2 else "B2"` and predicted B2 in
+all three. If B1 is unmeasurable and B2 is real, the naive code would print "Baseline to beat: B1" and
+compute the uplift against the absent rung, inflating it exactly when the evidence is weakest.
+Shipped: `_select_baseline` selects only among _finite_ rhos; if none are finite there is no baseline
+and the uplift is NaN, which `verdict()` maps to RED via its unmeasurable-result rule.
+
+**14. A VOID run exited 0.** The plan's `main()` returned exit code 0 for a VOID run — an invalid,
+gate-failed experiment reporting success to any CI job or script that only checks the exit status.
+Shipped: VOID exits 2; GREEN/YELLOW/RED all exit 0 (RED is a real, valid result, not an error).
+
+**15. The headline verdict's regime attribution was assigned independently of the band itself.** The
+plan set `payload["verdict"]` and `payload["verdict_regime"]` from two separate lookups, so a typo or
+edit to either alone could attribute Regime 1's band to Regime 2 or vice versa with nothing structural
+to prevent it — a review later constructed exactly this mis-binding and found it passed every test
+then in place, purely because the fixture's two regimes happened to agree on their band. Shipped: the
+band is _derived through_ the attribution (`payload["regimes"][payload["verdict_regime"]]["verdict"]`)
+— one lookup, with the label naming the key it used — so a dropped or wrong attribution now raises
+rather than silently mislabeling.
