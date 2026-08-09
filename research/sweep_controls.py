@@ -78,14 +78,15 @@ def sweep(world: World, start: int, count: int) -> list[dict[str, ControlResult]
     return [_run_one(world, seed) for seed in range(start, start + count)]
 
 
-def _summarize(name: str, rows: list[dict[str, ControlResult]]) -> tuple[int, int, float]:
+def _summarize(name: str, rows: list[dict[str, ControlResult]]) -> tuple[int, int, float, int]:
     """(fires, total, sd-of-the-statistic) for one control across a sweep."""
     values = np.array([row[name].value for row in rows], dtype=float)
     fires = sum(1 for row in rows if not row[name].passed)
     # nanstd rather than std: an unmeasurable step (NaN value, e.g. a control
     # excluded every creator) must not silently poison the sd of every other
     # step by propagating NaN through the whole reduction.
-    sd = float(np.nanstd(values)) if np.isfinite(values).any() else float("nan")
+    sd = float(np.nanstd(values)) if np.isfinite(
+        values).any() else float("nan")
     nan_count = int(np.isnan(values).sum())
     return fires, len(rows), sd, nan_count
 
