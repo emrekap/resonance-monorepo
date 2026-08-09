@@ -106,6 +106,13 @@ condition on ([`docs/resonance-model-design.md`](../../docs/resonance-model-desi
 | `confidence`            | `min(1, priors/20) × min(1, segments/20)` — a rank needs both a deep history _and_ a clip long enough for its means to be stable                   |
 | `analysis_axis_scores`  | five rows, each the same rank computed on that axis's own band                                                                                     |
 
+**The score never reads 0 or 100.** A rank of `pos` among `n` priors is plotted at
+`(pos + 1) / (n + 1)`, not `pos / (n - 1)`. The obvious scaling pins the worst prior to exactly 0
+and the best to exactly 100 by construction, so a clip better than everything a creator has made
+scored "top 0% of your posts" off as few as five data points. Beating 5 of 5 is evidence you rank
+above 5 of 6. The reachable band widens as history does — 17–83 at five priors, 0.5–99.5 at the
+200-row cap — which is the shape the claim actually has.
+
 Only visual, audio and language are weighted into the composite (0.40 / 0.35 / 0.25). EMOTIONAL_PULL
 and MEMORABILITY are cortical shadows of subcortical structures that fsaverage5 does not contain, so
 they get a score and a `BETA` label but no influence on the headline number. CLARITY drops to `BETA`
@@ -156,12 +163,27 @@ clip's own duration, truncated, deduped, capped at four, and re-prioritised from
 posts, and an available enum value is an invitation to guess.
 
 It runs **after** the first transaction commits, so the screen is useful the moment the analysis
-flips SUCCEEDED and the tips arrive a beat later over the realtime channel. It **never throws**: a
-failure logs, records `raw_stats.insights`, and returns. Failing the job would retry the whole
-handler and re-bill the call because a copywriting request had a bad minute.
+flips SUCCEEDED and the tips arrive a beat later over the realtime channel.
+
+**The stage is best-effort, and the boundary is `writeRecommendations` in `results.ts`, not
+`generateRecommendations` itself.** `generateRecommendations` throws on refusal, truncation and
+schema failure — deliberately, because returning `[]` would be indistinguishable from a model that
+had nothing to say, and a tips section missing for no stated reason is worse than one that names its
+cause. `writeRecommendations` catches, logs, and records the message on `raw_stats.insights`. What
+must never happen is the exception reaching BullMQ: that retries the whole handler and re-bills the
+call because a copywriting request had a bad minute. Any new caller needs the same try/catch.
+
+Two failure modes are checked by name before the response is parsed, since both return HTTP 200 with
+empty or partial content: a classifier `refusal`, and `max_tokens` — thinking is on by default on
+Opus 5 and shares the 16 k budget with the reply, so a long enough transcript can exhaust it before
+the JSON closes. Refusals also carry `fallbacks: 'default'`, which re-runs a declined request on
+Anthropic's recommended substitute server-side; a creator's transcript is arbitrary speech this
+pipeline does not control, so the usual outcome is tips from a slightly older model rather than none.
 
 Needs `ANTHROPIC_API_KEY`. Without it the stage is skipped with one warning at boot and analyses are
-still fully scored — only the tips are missing. Roughly $0.03 per analysis.
+still fully scored — only the tips are missing. Per-analysis cost has not been measured against real
+clips yet; at Opus 5 rates ($5/$25 per Mtok, thinking tokens billed as output) it is dominated by
+transcript length, so measure it on the first real batch rather than trusting an estimate here.
 
 ```bash
 bun test    # scoring + insight validation, no network

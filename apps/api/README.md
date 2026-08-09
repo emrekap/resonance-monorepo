@@ -8,9 +8,17 @@ the Python worker consumes them).
 
 Typesafety: define routes with validators, **method-chain them**, and export `type AppType = typeof routes`.
 That type is re-exported from [`@repo/api-contract`](../../packages/api-contract) for the clients.
-Use `@hono/zod-openapi` so we also emit an OpenAPI spec (for the future public/agency API tier).
 
-Calls into the Python ML service through the typed [`@repo/ml-client`](../../packages/ml-client).
+**It does not call `apps/ml` directly.** Analysis goes over a queue in both directions — this
+process only ever produces to `analysis`, and `apps/worker` persists what comes back. There is no
+HTTP call from here into the Python service anywhere in the codebase, which is why
+[`@repo/ml-client`](../../packages/ml-client) is still an empty placeholder; its README says what
+would make it real.
+
+**Planned, not present:** `@hono/zod-openapi`. Routes validate with plain `zod` + `zValidator`
+today. Moving to it would add an emitted OpenAPI spec for the future public/agency API tier without
+changing the chaining rules below — but nothing in this app imports it yet, so don't expect a spec
+to exist.
 
 ---
 
@@ -225,8 +233,21 @@ credential must never live where HTTP is served. That is why there is no worker 
 
 ## Env
 
-Copy `.env.example` to `.env`. Bun loads it from this directory, so `APP_USER_DATABASE_URL` lives
-here as well as in `packages/db/.env`.
+Copy `.env.example` to `.env` — it carries the reasoning inline. Bun loads it from this directory,
+so `APP_USER_DATABASE_URL` lives here as well as in `packages/db/.env`.
+
+| Variable                                        | Needed for                                                |
+| ----------------------------------------------- | --------------------------------------------------------- |
+| `APP_USER_DATABASE_URL`                         | everything with a DB — the `app_user` role, RLS enforced  |
+| `SUPABASE_URL` (+ optional `SUPABASE_JWKS_URL`) | verifying access tokens                                   |
+| `SUPABASE_PUBLISHABLE_KEY`                      | signed media URLs on `POST /analyze`                      |
+| `REDIS_URL`                                     | enqueueing on `POST /analyze`                             |
+| `API_PUBLIC_URL`                                | where the platform OAuth callback lands                   |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`     | connecting YouTube accounts                               |
+| `OAUTH_STATE_SECRET`                            | signing the connect-state through the consent redirect    |
+| `TOKEN_ENCRYPTION_KEY`                          | sealing platform tokens at rest (must decode to 32 bytes) |
+
+The last four are only touched by `/connected-accounts`; the rest of the app boots without them.
 
 `REDIS_URL` is needed for `POST /analyze` — `docker compose -f infra/docker/docker-compose.yml up -d`.
 `@repo/queue` connects lazily, so a test that only drives `/health` or `GET /analyze/:id` does not

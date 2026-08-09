@@ -11,34 +11,46 @@ suggested_storage: large
 
 # TRIBE v2 Video Analysis API
 
-A lightweight **FastAPI** service that wraps Meta's [TRIBE v2](https://huggingface.co/facebook/tribev2) model, exposing a REST endpoint to predict **fMRI brain responses** to video (and audio) files.
+**`apps/ml`** — the Python half of the polyglot split. It wraps Meta's
+[TRIBE v2](https://huggingface.co/facebook/tribev2) to predict **fMRI brain responses** to video and
+audio, and reduces them to the five product axes the app shows. Two entry points over one engine: a
+**BullMQ worker** (what `apps/api` actually drives) and a **FastAPI** face (manual use, and the
+Space's health check).
 
 > **What is TRIBE v2?**
 > A deep multimodal brain-encoding model from Meta that predicts how the human cortex responds to naturalistic stimuli. It combines V-JEPA2 (video), Wav2Vec-BERT (audio), and LLaMA 3.2 (text) into a unified Transformer that maps onto the fsaverage5 cortical mesh (~20 k vertices).
+
+This is a **Python island**: no `package.json`, so Bun and Turbo ignore it by design. It is driven
+from here, not from the repo root — except `bun run test:ml`, which shells into the venv below.
 
 ---
 
 ## Requirements
 
-| Requirement           | Notes                                                                         |
-| --------------------- | ----------------------------------------------------------------------------- |
-| **Python**            | 3.11 (tested on 3.11.15; `exca` requires ≥ 3.11)                              |
-| **pip**               | 23+                                                                           |
-| **RAM**               | ≥ 8 GB (TRIBE v2 weights ~3.5 GB + Llama-3.2-3B ~6 GB)                        |
-| **GPU**               | Optional but strongly recommended (CPU inference is slow)                     |
-| **`uv` + `ffmpeg`**   | Required for transcription: tribev2 runs `uvx whisperx`, which needs `ffmpeg` |
-| **HuggingFace token** | **Required for all inference** — gated [LLaMA 3.2-3B] text encoder.           |
+| Requirement           | Notes                                                                              |
+| --------------------- | ---------------------------------------------------------------------------------- |
+| **Python**            | 3.11 (tested on 3.11.15; `exca` requires ≥ 3.11)                                   |
+| **pip**               | 23+                                                                                |
+| **RAM**               | ≥ 8 GB — the loaded model is TRIBE v2 (~3.5 GB) plus Llama-3.2-3B (~6 GB)          |
+| **Disk**              | ~10 GB in `TRIBE_CACHE_DIR` — the TRIBE checkpoint (~1 GB) plus its three encoders |
+| **GPU**               | Optional but strongly recommended (CPU inference is slow)                          |
+| **`uv` + `ffmpeg`**   | Required for transcription: tribev2 runs `uvx whisperx`, which needs `ffmpeg`      |
+| **HuggingFace token** | **Required for all inference** — including video-only and audio-only. See below.   |
 
-[LLaMA 3.2-3B]: https://huggingface.co/meta-llama/Llama-3.2-3B
+### HuggingFace access — required for every request, not just text
 
-### HuggingFace access (required)
-
-Every request runs TRIBE v2's text encoder, the **gated** `meta-llama/Llama-3.2-3B` repo:
+Every run loads TRIBE v2's text encoder, the **gated**
+[`meta-llama/Llama-3.2-3B`](https://huggingface.co/meta-llama/Llama-3.2-3B) repo. There is no
+video-only or audio-only path that skips it — the trimodal transformer wants all three streams, so
+a missing token fails a silent-video clip exactly as it fails a talking head
+([`engine.py`](engine.py) says the same at the bootstrap).
 
 1. Request access (one click, usually instant): <https://huggingface.co/meta-llama/Llama-3.2-3B>
 2. Create a read token: <https://huggingface.co/settings/tokens>
-3. Put it in `.env` (`cp .env.example .env`, then set `HF_TOKEN=hf_…`). `main.py` loads
-   `.env` on startup and also accepts the `HUGGINGFACE_TOKEN` / `HUGGING_FACE_HUB_TOKEN` aliases.
+3. Put it in `.env` (`cp .env.example .env`, then set `HF_TOKEN=hf_…`). `engine.py` loads `.env` on
+   startup and bridges the `HUGGINGFACE_TOKEN` / `HUGGING_FACE_HUB_TOKEN` aliases onto `HF_TOKEN`
+   for `huggingface_hub`. No `huggingface-cli login` needed — the env var is the whole mechanism,
+   which is also how the container gets it (a Space secret, never a layer in the image).
 
 Without it, inference fails with `401 ... gated repo` at the text-feature step.
 
@@ -46,46 +58,54 @@ Without it, inference fails with `401 ... gated repo` at the text-feature step.
 
 ## Quick start
 
-### 1 — Clone / download the project
+### 1 — Get to this directory
 
 ```bash
-git clone <this-repo>
-cd tribev2-api
+git clone <this-repo> resonance-monorepo
+cd resonance-monorepo/apps/ml
 ```
 
 ### 2 — Create a virtual environment
 
 ```bash
-pyenv versions
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 ```
 
+`.venv` in **this** directory is also what `bun run test:ml` looks for from the repo root; it fails
+with a pointer here if it is missing.
+
 ### 3 — Install dependencies
 
+Two files, and which one you want depends on whether you intend to run the model:
+
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt        # to RUN inference: torch + tribev2 from git, several minutes
+pip install -r requirements-dev.txt    # to run the TESTS only: no torch, no tribev2, seconds
 ```
 
-> First install pulls TRIBE v2 from GitHub and its transitive deps (PyTorch, transformers, etc.). This can take a few minutes.
+The suite needs only the dev file because the model sits behind a backend seam — see
+[Tests](#tests). CI installs `requirements-dev.txt` precisely so that a stray module-scope
+`import torch` turns the job red.
 
 ### 4 — Configure environment
 
 ```bash
 cp .env.example .env
-# Edit .env — add your HuggingFace token if you plan to use text input
+# Edit .env — HF_TOKEN is required (see above); REDIS_URL if you will run the worker
 ```
 
-### 5 — Start the server
+### 5 — Start something
 
 ```bash
-# Load .env automatically (Linux/macOS)
-set -a && source .env && set +a
+python worker.py                    # the queue worker — what apps/api drives
+ML_BACKEND=synthetic python worker.py   # ...the same worker, without a GPU
 
-python main.py
-# or
-uvicorn main:app --host 0.0.0.0 --port 8000
+python main.py                      # or the FastAPI face → http://localhost:8040
+uvicorn main:app --host 0.0.0.0 --port 8040
 ```
+
+`engine.py` loads `.env` itself, so no `set -a && source .env` dance is needed.
 
 ---
 
@@ -237,7 +257,9 @@ here is GPU memory, not I/O; `ML_WORKER_LOCK_MS` — must exceed the slowest run
 checker hands the same clip to a second worker mid-inference; `ML_MAX_MEDIA_BYTES`,
 `ML_DOWNLOAD_TIMEOUT_S`.
 
-On first startup the model weights (~1 GB) are downloaded from HuggingFace to `./cache/`.
+On first startup the weights are downloaded from HuggingFace to `TRIBE_CACHE_DIR` (default
+`./cache/`) — **~10 GB**: the TRIBE v2 checkpoint is only ~1 GB of that, the three encoders are the
+rest. Budget the disk and the first-boot minutes accordingly.
 
 ### On the Hugging Face Space
 
@@ -291,6 +313,11 @@ stalled-job checker requeues it.
 
 ## API endpoints
 
+**The FastAPI face is not on the product's path** — `apps/api` reaches this service only over the
+queue. These endpoints are for driving the model by hand, and for giving the Space something to
+answer a health check with. On the Space they run with `ML_HTTP_LOAD_MODEL=0`, so `/analyze/*`
+returns **503** there and only the two health routes work.
+
 | Method | Path             | Description                                  |
 | ------ | ---------------- | -------------------------------------------- |
 | `GET`  | `/`              | Health check                                 |
@@ -300,7 +327,7 @@ stalled-job checker requeues it.
 
 ### Interactive docs
 
-Open **<http://localhost:8000/docs>** for the Swagger UI.
+Open **<http://localhost:8040/docs>** for the Swagger UI.
 
 ---
 
@@ -310,14 +337,14 @@ Open **<http://localhost:8000/docs>** for the Swagger UI.
 
 ```bash
 # Health check
-curl http://localhost:8000/health
+curl http://localhost:8040/health
 
 # Analyse a video (summary output)
-curl -X POST http://localhost:8000/analyze/video \
+curl -X POST http://localhost:8040/analyze/video \
      -F "file=@/path/to/video.mp4"
 
 # Analyse a video — include full prediction tensor
-curl -X POST "http://localhost:8000/analyze/video?include_full_predictions=true" \
+curl -X POST "http://localhost:8040/analyze/video?include_full_predictions=true" \
      -F "file=@/path/to/video.mp4"
 ```
 
@@ -338,7 +365,7 @@ import requests
 
 with open("video.mp4", "rb") as f:
     resp = requests.post(
-        "http://localhost:8000/analyze/video",
+        "http://localhost:8040/analyze/video",
         files={"file": ("video.mp4", f, "video/mp4")},
         timeout=300,
     )
@@ -359,7 +386,7 @@ print(data["shape"])
   "status": "success",
   "filename": "video.mp4",
   "shape": [30, 20484],
-  "n_timesteps": 30,          // at 2 Hz (one per 500 ms)
+  "n_timesteps": 30,          // one row per fMRI TR — see the caveat below
   "n_vertices": 20484,        // fsaverage5 cortical mesh
   "mean_activation_per_vertex": [...],   // length n_vertices
   "mean_activation_per_timestep": [...], // length n_timesteps
@@ -377,32 +404,42 @@ print(data["shape"])
 }
 ```
 
----
+**`n_timesteps` and `segments` count different things.** A timestep is one **model output row**, one
+per fMRI repetition time (TR); a segment is one **input window** carrying the whisperx events, which
+is why `n_events` hangs off it. They are not the same clock and neither is a video frame rate.
 
-## HuggingFace token
-
-A **HuggingFace read token** is only required if you use the **text** modality (which downloads the gated LLaMA 3.2-3B model).
-
-For **video-only** or **audio-only** requests no token is needed.
-
-**How to create a token:**
-
-1. Go to <https://huggingface.co/settings/tokens>
-2. Click **New token → Read**
-3. Copy the token into `.env` as `HUGGINGFACE_TOKEN`
-4. Run `huggingface-cli login` and paste the token when prompted
+**The TR is not confirmed.** `backends/synthetic.py` assumes `TR_SEC = 1.49`, and that constant is
+one of the two documented guesses in this package, not a measurement — the timeline the product
+draws is indexed by it. `ML_RECORD_DIR=<dir> python worker.py` on a box that can run the real model
+writes a `tribe-shape.json` manifest; committing one is what turns the guess into a fact. Until then
+do not quote a sampling rate in user-facing copy.
 
 ---
 
 ## Environment variables
 
-| Variable            | Default   | Description                         |
-| ------------------- | --------- | ----------------------------------- |
-| `HUGGINGFACE_TOKEN` | _(empty)_ | HF token (needed for text modality) |
-| `TRIBE_CACHE_DIR`   | `./cache` | Where to store model weights        |
-| `HOST`              | `0.0.0.0` | Bind address                        |
-| `PORT`              | `8000`    | Listen port ress                    |
-| `PORT`              | `8000`    | Listen port                         |
+[`.env.example`](.env.example) is the authoritative list and carries the reasoning inline; this is
+the summary.
+
+| Variable                | Default                  | Applies to  | Meaning                                                                                |
+| ----------------------- | ------------------------ | ----------- | -------------------------------------------------------------------------------------- |
+| `HF_TOKEN`              | _(empty)_                | both        | **Required for all inference.** Aliases: `HUGGINGFACE_TOKEN`, `HUGGING_FACE_HUB_TOKEN` |
+| `TRIBE_CACHE_DIR`       | `./cache`                | both        | Where the ~10 GB of weights land                                                       |
+| `TRIBE_DEVICE`          | auto                     | both        | Force `cpu` \| `cuda` \| `mps`; auto-detects cuda > mps > cpu                          |
+| `HOST`                  | `0.0.0.0`                | `main.py`   | Bind address                                                                           |
+| `PORT`                  | `8040`                   | `main.py`   | Listen port (the container sets `7860` for the Space)                                  |
+| `ML_HTTP_LOAD_MODEL`    | `1`                      | `main.py`   | `0` starts the HTTP face without the model; `/analyze/*` → 503                         |
+| `REDIS_URL`             | `redis://127.0.0.1:6379` | `worker.py` | The queue. Same instance as `apps/api` and `apps/worker`                               |
+| `ML_BACKEND`            | `tribe`                  | `worker.py` | `tribe` \| `synthetic`                                                                 |
+| `ML_WORKER_CONCURRENCY` | `1`                      | `worker.py` | Jobs in flight. This is GPU memory, not I/O                                            |
+| `ML_WORKER_LOCK_MS`     | `1800000`                | `worker.py` | Must exceed the slowest run, or a stalled-job check double-runs a clip                 |
+| `ML_RESULT_ATTEMPTS`    | `5`                      | `worker.py` | Retries `apps/worker` gets to persist one result                                       |
+| `ML_MAX_MEDIA_BYTES`    | `2147483648`             | `worker.py` | Refuse larger media instead of filling the disk                                        |
+| `ML_DOWNLOAD_TIMEOUT_S` | `300`                    | `worker.py` | Media download timeout                                                                 |
+| `ML_SYNTH_SCENARIO`     | `mixed`                  | synthetic   | `visual_burst` \| `talky` \| `flat` \| `mixed`                                         |
+| `ML_SYNTH_SEED`         | `0`                      | synthetic   | Makes the fabricated tensor reproducible                                               |
+| `ML_SYNTH_DURATION_SEC` | probed                   | synthetic   | Skip reading the media's real duration                                                 |
+| `ML_RECORD_DIR`         | unset                    | `worker.py` | Write a `tribe-shape.json` manifest per run                                            |
 
 ---
 
@@ -411,17 +448,34 @@ For **video-only** or **audio-only** requests no token is needed.
 - TRIBE v2 predictions are offset 5 s into the past to compensate for haemodynamic lag.
 - Video should be **≥ 15–30 seconds** for meaningful predictions.
 - CPU inference is supported but very slow; a CUDA GPU is recommended.
-- The model weights are licensed under **CC-BY-NC-4.0** (non-commercial use only).
+- The model weights are licensed under **CC-BY-NC-4.0** (non-commercial use only) — which is why
+  `docs/investor-one-pager.md` scopes TRIBE to MVP validation and the commercial product to an
+  independently trained model.
 
 ---
 
 ## Project structure
 
-```
-tribev2-api/
-├── main.py             # FastAPI app + all endpoints
-├── example_client.py   # Python client demo
-├── requirements.txt    # Python dependencies
-├── .env.example        # Environment variable template
-└── README.md
+```text
+apps/ml/
+├── worker.py            # BullMQ consumer of `analysis` — the production entry point
+├── main.py              # FastAPI face: /health + /analyze/{video,audio}
+├── engine.py            # SHARED: .env + PATH bootstrap, whisperx pin, device, model load, inference
+├── parcellation.py      # [T × 20484] → five per-segment product-axis bands
+├── queue_contract.py    # Pydantic mirror of packages/queue/src/contract.ts — CHANGE BOTH
+├── backends/            # the model seam that keeps the tests torch-free
+│   ├── tribe.py         #   the real thing — the ONLY module that may import torch
+│   └── synthetic.py     #   deterministic fake with signal planted in named networks
+├── atlas/
+│   ├── schaefer400_17networks_fsaverage5.npz   # committed, 14 KB, parcel ids not axis ids
+│   └── axis_map.py      #   parcel → product axis, in code so it is reviewable
+├── scripts/build_atlas.py   # regenerates the .npz (needs nibabel + network)
+├── tests/               # pytest — no GPU, no torch, no tribev2
+├── manage_space.py      # HF Space deploy: secrets / deploy / status / restart / pause
+├── entrypoint.sh        # runs uvicorn + worker.py in one container, dies if either does
+├── Dockerfile
+├── requirements.txt     # to RUN: torch + tribev2 from git
+├── requirements-dev.txt # to TEST: neither
+├── example_client.py
+└── .env.example
 ```

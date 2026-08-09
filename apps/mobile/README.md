@@ -110,10 +110,23 @@ envelope, next offset taken from the page the server just described rather than 
 - **Filter state is not persisted.** Nothing deep-links into a filtered history, and a tab that
   reopens on "All" is what a user expects.
 
-Two columns the rows want are still empty in the data: `durationSec` is never written, and
-`resonanceScore` is null until model calibration ships. The row composes its subtitle from whichever
-parts exist and shows a status dot where the score goes, so neither reads as broken — but that is
-why `file_name` exists, or every row would say "Video" and nothing else.
+**A row's columns are all optional, and one of them is optional on purpose.** `durationSec` is
+written by `apps/worker` but null on anything analysed before it was; `fileName` is null for
+URL-registered assets. `resonanceScore` is the interesting one: it is written now — a rank against
+the workspace's own prior analyses — but **withheld below five priors**, because a rank against a
+history that does not exist is not a number
+([`apps/worker/README.md`](../worker/README.md#scoring--scoringts)). So a new workspace's first four
+analyses legitimately have no score, forever, and that is not a loading state.
+
+The row composes its subtitle from whichever parts exist and shows a status dot where the score
+goes, so none of these read as broken — and it is why `file_name` exists, or every row would say
+"Video" and nothing else.
+
+The result screen says which of those it is: `<Score>` renders its `caption` in the **null** branch
+too, so `analysis/[id]` can pass _"Baseline — analyze a few more to see how this one ranks"_ for a
+withheld score and the component never has to guess why a number is missing. It previously dropped
+the caption in exactly that branch and hardcoded _"waiting on model calibration"_ — copy that was
+already untrue when scoring shipped, and unreachable-by-design for the one case it described.
 
 ## Connected accounts — data access, not login
 

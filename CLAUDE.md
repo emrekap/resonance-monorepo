@@ -47,7 +47,7 @@ hand in `apps/ml/queue_contract.py` — **change one, change the other.**
 
 ```
 apps/    mobile (Expo RN) · web (Next.js, later) · api (Bun+Hono BFF) · ml (Python FastAPI + BullMQ worker) · worker (Bun, results → Postgres)
-packages/ db (Prisma) · queue (BullMQ contract) · api-contract (Hono RPC client) · tsconfig (@repo/tsconfig) · eslint-config (@repo/eslint-config) · ml-client (TS client from ML OpenAPI)
+packages/ db (Prisma) · queue (BullMQ contract) · api-contract (Hono RPC client) · tsconfig (@repo/tsconfig) · eslint-config (@repo/eslint-config) · ml-client (empty placeholder — the queue replaced the HTTP seam it was for; see its README)
 infra/   docker (local Redis + bull-board) · deploy
 ```
 
@@ -122,6 +122,7 @@ turbo run build             # emit apps/api AppType d.ts
 turbo run typecheck         # typecheck all (builds first via ^build)
 turbo run lint              # eslint all (type-aware; also builds first via ^build)
 turbo run dev               # run dev tasks
+bun run test                # turbo test + the apps/ml pytest suite (needs apps/ml/.venv)
 bun run format              # prettier
 
 # the analysis path, end to end — needs all four
@@ -213,14 +214,55 @@ score, just without tips). `GET /analyze/:id` returns the lot and the mobile res
 verdict → timeline → why → do-this. Unit-tested on both sides of the queue, including a shared
 fixture that catches api↔ml contract drift — **but no real clip has run through it end to end.**
 
-**TODO:** run a real clip through ml → worker → Postgres and confirm the five timeline arrays land
-(the atlas's vertex order is asserted against `n_vertices` but has never been checked against real
-anatomy — a high-motion clip should light the visual band); deploy images for `apps/worker` + the ml
-worker; generate `@repo/ml-client` from the ml OpenAPI; run the YouTube connect flow against real
-Google credentials + Supabase Google login end-to-end; run the upload→analyze flow on-device against
-a live GPU worker; the calibration head that would give `resonanceScore` an absolute meaning
-(`docs/resonance-model-design.md` §2); Instagram/TikTok `PlatformProvider`s; Facebook/TikTok login
+## TODO
+
+**Blocking, and one of them blocks the honesty of everything else.**
+
+1. **Check the atlas against real anatomy.** `parcellation.py` asserts the atlas has the expected
+   `n_vertices`, but its **vertex order has never been checked against a real brain** — and a
+   transposed or differently-ordered surface still averages to plausible numbers on all five axes,
+   so the failure is silent by construction. Everything downstream (axes, composite,
+   `percentileInChannel`, `resonanceScore`, the insight prompt) inherits it. The check is cheap: one
+   high-motion clip should light the visual band and little else. **Do this before quoting any axis
+   number to anyone.** Also tracked in `docs/resonance-model-design.md` §2e and
+   `docs/validation-prereg.md` §9.
+2. **Run a real clip through ml → worker → Postgres** and confirm the five timeline arrays land.
+   Same run yields (1), the real per-analysis Anthropic cost, and the `TR_SEC` manifest via
+   `ML_RECORD_DIR` — three unknowns for one GPU-minute.
+3. **Run the upload→analyze flow on-device** against a live GPU worker.
+4. **Run the YouTube connect flow** against real Google credentials + Supabase Google login.
+
+**Product surfaces that are specified but absent.** Each is promised in `docs/` and has no code:
+
+- **A/B variants** — `resonance-model-design.md` §3 calls ranking "the tip of the spear" and the
+  most defensible use of a noisy model. No route, no schema, no screen.
+- **Credits / billing** — `CreditBalance`, `CreditTransaction` and `analyses.credits_charged` exist
+  in the schema and **nothing reads or writes them**. The one-pager's entire business model is
+  usage-based credits. Either build the meter or record the deferral; a billing schema no code
+  touches is the kind of thing that silently rots.
+- **The ToS purge sweep** — `connected-accounts` disconnect sets `purgeAfter`, `data_deletion_requests`
+  exists as the audit trail, and `platform-data-contract.md` says all three platforms _require_
+  deletion. **No sweep runs.** This is the compliance-shaped one.
+- **Cold-start copy** — a workspace's first four analyses correctly have no score. The screen says
+  so only via a caption; there is no onboarding that sets the expectation.
+
+**Decisions still open.**
+
+- **`BAND_SUMMARY`** (`apps/worker/src/scoring.ts`) is `'peak'` by argument, not by evidence, and it
+  feeds the composite → the percentile → the headline number. Settling it needs real clips ranked
+  each way; it is not in scope for the pre-registration.
+- **The calibration head** that would give `resonanceScore` an absolute meaning
+  (`docs/resonance-model-design.md` §2), gated on `docs/validation-prereg.md`.
+- **Validation cohort acquisition** — the gating dependency for the whole experiment, and the item
+  with the least written about it. See `docs/validation-experiment-spec.md` §11a: YouTube gives no
+  source video files, so the corpus needs a paid or design-partner motion, not an ask.
+
+**Also queued:** deploy images for `apps/worker` + the ml worker; a production Redis decision
+(shared instance, `noeviction`); Instagram/TikTok `PlatformProvider`s; Facebook/TikTok login
 providers; scaffold `apps/web`.
+
+**Not** `@repo/ml-client` — the queue replaced the HTTP seam it was scaffolded for, and it only
+becomes real if something in the TS layer needs a synchronous call into `apps/ml`.
 
 ## Conventions
 

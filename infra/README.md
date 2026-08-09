@@ -51,10 +51,24 @@ queue and the **full stack trace** of a failed job — the one place an ML trace
 [`packages/queue/src/contract.ts`](../packages/queue/src/contract.ts), or the board connects fine and
 shows two permanently empty queues.
 
+## Object storage — done, and not here
+
+Uploads ship on **Supabase Storage**, not on anything in this directory. The private `media` bucket
+is created and policed by the `security_rls` migration (§7): workspace-scoped RLS on the first path
+segment, 500 MiB and `video|audio|image` caps in `media_bucket_limits`. Clients stream straight to
+it with their own JWT and the API never sees the bytes — see the upload sections of
+[`apps/api/README.md`](../apps/api/README.md) and [`apps/mobile/README.md`](../apps/mobile/README.md).
+
+The `external` bucket beside it is **not a leftover placeholder**: it is the escape hatch for media
+that is already URL-addressable (`POST /analyze { mediaUrl }`), which skips registration, upload and
+the signed-URL mint entirely. Both are deliberate.
+
 ## Still to build
 
 - **Dockerfiles / compose** for each deployable (`apps/api` + `apps/worker` on cheap CPU, `apps/ml`
   on GPU). `apps/ml` has an image already — reuse it, overriding `CMD` to `python worker.py`.
-- **Object storage** (Supabase Storage / S3 / R2) for video, replacing the `external` bucket
-  placeholder in `media_assets`.
+- **A production Redis decision.** All three processes must share one instance, and it must be
+  configured `noeviction` (see below — the requirement is not local-only). The `apps/ml` README's
+  Space section is currently the only place this is written down, and it is not an ml-specific
+  concern.
 - Deploy targets, env, and CI.
