@@ -130,6 +130,28 @@ def render_report(payload: dict) -> str:
     lines: list[str] = [
         f"# Validation result — {band}",
         "",
+    ]
+    # Name the regime the band came from. The pre-registration reports both
+    # splits (§7 "Splits, both reported") but its §8 results table has a single
+    # unqualified "Verdict" row -- it never says which regime that verdict is.
+    # The choice is therefore the pipeline's (`cli.HEADLINE_REGIME`), and an
+    # unnamed band would let a Regime-1 GREEN read as a joint result while
+    # Regime 2 is RED. Each regime's own band goes on the same line so the two
+    # cannot be conflated. Suppressed on a voided run, which has no headline to
+    # attribute and must name no regime at all (see the void branch below).
+    headline_regime = payload.get("verdict_regime")
+    if not voided and headline_regime:
+        per_regime = " · ".join(
+            f"`{name}` {regime.get('verdict', '?')}"
+            for name, regime in payload.get("regimes", {}).items()
+        )
+        lines += [
+            f"Headline band from `{headline_regime}` — the production case "
+            f"(new post, known creator). Per regime: {per_regime}. The band above "
+            "is that regime's alone, not a joint result.",
+            "",
+        ]
+    lines += [
         f"Snapshot: `{payload['snapshot'].get('producer', 'unknown')}` · "
         f"{payload['snapshot'].get('rows', '?')} posts · "
         f"{payload['snapshot'].get('creators', '?')} creators · seed {payload.get('seed')}",
@@ -165,7 +187,11 @@ def render_report(payload: dict) -> str:
             "",
             *_rung_table(regime["rungs"]),
             "",
-            f"**Baseline to beat:** {regime['baseline_rung']} (max of B1, B2)",
+            # `baseline_rung` is None when neither B1 nor B2 was measurable
+            # (see `cli._select_baseline`) -- render that as "n/a", the same
+            # way `_fmt` renders an unmeasured number, rather than the literal
+            # "None", which reads like a rung name.
+            f"**Baseline to beat:** {regime['baseline_rung'] or 'n/a'} (max of B1, B2)",
             "",
             f"**Uplift B3 − baseline:** {_fmt(regime['uplift']['point'])} "
             f"[{_fmt(regime['uplift']['lo'])}, {_fmt(regime['uplift']['hi'])}], "
