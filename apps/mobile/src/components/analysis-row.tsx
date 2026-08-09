@@ -46,13 +46,16 @@ export interface AnalysisRowProps {
  * One analysis in the history list.
  *
  * The leading slot is the score when there is one and a status dot when there
- * is not — every score is null until calibration ships, so the dot is the
- * common case today and the layout must not look broken in it.
+ * is not. `resonanceScore` is written now — a rank against the workspace's own
+ * prior analyses — but `apps/worker` withholds it below five priors, because a
+ * rank with no history is not a number. So the dot is still the whole of a new
+ * workspace's history, and the layout must not look broken in it.
  *
  * `fileName` is null for assets registered from a URL and for everything
  * uploaded before the column existed, so the title falls back to the media
- * kind. `durationSec` is likewise unwritten today, so the subtitle composes
- * from whichever parts exist rather than assuming all of them.
+ * kind. `durationSec` is written by the results worker but is null on rows
+ * analysed before it was, so the subtitle composes from whichever parts exist
+ * rather than assuming all of them.
  */
 export function AnalysisRow({ analysis, onPress }: AnalysisRowProps) {
   const theme = useTheme();
