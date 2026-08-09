@@ -272,7 +272,7 @@ async function writeRecommendations(
 
     const recommendations = await generateRecommendations({
       modality: (analysis?.mediaAsset.kind ?? 'VIDEO').toLowerCase(),
-      durationSec: result.durationSec ?? timeline.timelineStartSec.at(-1) ?? 0,
+      durationSec: clipDurationSec(result, timeline),
       timeline: result.timeline,
       transcript: result.transcript ?? [],
       axisRows: analysis?.result?.axisScores ?? [],
@@ -306,6 +306,28 @@ async function writeRecommendations(
       // Recording *why* the tips are missing is strictly best-effort too.
     }
   }
+}
+
+/**
+ * How long the clip runs — the bound every recommendation timestamp is checked
+ * against in `insights.validate`.
+ *
+ * `apps/ml` sends `durationSec`; this fallback covers a payload written before
+ * it did. `timelineStartSec` holds segment *starts*, so its last entry is where
+ * the final segment begins, not where the clip ends — handing that over as the
+ * duration range-checks every tip anchored in the final segment down to a null
+ * anchor, silently losing the "trim the ending" advice most likely to be there.
+ * Adding one mean stride estimates the end of that last segment instead.
+ */
+function clipDurationSec(result: AnalysisSucceeded, timeline: TimelineColumns): number {
+  if (typeof result.durationSec === 'number') return result.durationSec;
+
+  const starts = timeline.timelineStartSec;
+  const last = starts.at(-1);
+  if (last === undefined) return 0;
+
+  const stride = starts.length > 1 ? (last - (starts[0] as number)) / (starts.length - 1) : 0;
+  return last + stride;
 }
 
 /**
@@ -380,9 +402,13 @@ type TimelineColumns = {
  *
  * `analysis_results_timeline_len_chk` requires all five to be equal-length or
  * all empty, so a timeline with only `startSec`/`attention` cannot be stored —
- * it would be rejected by Postgres, not silently truncated. The bands need a
- * Yeo-7 parcellation of the fsaverage5 vertices, which `apps/ml` does not do
- * yet; until it does, the curve rides along in `raw_stats`.
+ * it would be rejected by Postgres, not silently truncated.
+ *
+ * `apps/ml` has sent the bands since the parcellation landed (`apps/ml/atlas/`,
+ * Schaefer-2018 17-network on fsaverage5). Null is therefore the *compatibility*
+ * path rather than the normal one: a worker deployed ahead of the ml image, or a
+ * payload written before the parcellation existed. Those keep the real curve in
+ * `raw_stats`, because recomputing it means another GPU run.
  */
 function timelineColumns(timeline: Timeline): TimelineColumns | null {
   const { startSec, attention, visual, audio, language } = timeline;
