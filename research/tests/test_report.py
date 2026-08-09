@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from eval.report import _fmt, _json_safe, render_report, write_results
+from eval.verdict import GREEN, RED, VOID, YELLOW
 
 PAYLOAD = {
     "snapshot": {"producer": "synthetic", "rows": 1000, "creators": 40},
@@ -62,14 +63,58 @@ def test_write_results_also_writes_the_markdown_report(tmp_path):
 def test_report_leads_with_the_verdict():
     report = render_report(PAYLOAD)
     assert report.splitlines()[0].startswith("# ")
-    assert "GREEN" in report
+    # Pinned on the FIRST LINE specifically, not "GREEN" anywhere in the
+    # report -- see test_report_headline_is_pinned_to_each_verdict_band for
+    # why "GREEN" appearing anywhere isn't proof this line is doing its job
+    # (the fixture's own `explanation` string contains the word GREEN too).
+    assert report.splitlines()[0].endswith(GREEN)
+
+
+@pytest.mark.parametrize("band", [GREEN, YELLOW, RED, VOID])
+def test_report_headline_is_pinned_to_each_verdict_band(band):
+    # Hardcoding render_report's header to a fixed string (e.g. always
+    # "GREEN") passes test_report_leads_with_the_verdict, because that test's
+    # fixture genuinely IS GREEN, and it passes the brief's original
+    # `"VOID" in report` void test too, because that string also appears in
+    # the "## VOID" section heading independent of the top line. Only varying
+    # the payload's `verdict` across all four bands and checking the FIRST
+    # LINE specifically catches a hardcoded (or swapped) headline.
+    payload = copy.deepcopy(PAYLOAD)
+    payload["verdict"] = band
+    report = render_report(payload)
+    assert report.splitlines()[0].endswith(band)
 
 
 def test_report_shows_every_rung_and_the_uplift():
     report = render_report(PAYLOAD)
     for rung in ("B0", "B1", "B2", "B3", "B4"):
         assert rung in report
-    assert "0.190" in report or "0.19" in report
+    # Matched on the LABEL together with its value, not a bare number: the
+    # regime's own `explanation` string also contains "0.190" on its own
+    # line, so a bare-number assertion is satisfied even if the uplift line
+    # itself is deleted entirely.
+    assert "Uplift B3" in report
+    assert "0.190 [0.140, 0.240]" in report
+
+
+def test_report_shows_the_baseline_line():
+    # Deleting the "**Baseline to beat:**" line entirely is not caught by any
+    # other assertion in this file -- "B1" alone appears in the rung table
+    # too, so this must match the label together with its value.
+    report = render_report(PAYLOAD)
+    assert "**Baseline to beat:** B1 (max of B1, B2)" in report
+
+
+def test_report_shows_the_verdict_line_with_the_full_explanation():
+    # Deleting the "**Verdict:** {explanation}" line entirely is not caught
+    # by any other assertion -- the explanation text alone (matched via "in
+    # report") is satisfied by this exact line, so pin the label together
+    # with the explanation, not the explanation alone.
+    report = render_report(PAYLOAD)
+    assert (
+        "**Verdict:** GREEN: uplift 0.190 clears the 0.10 threshold at p=0.0001."
+        in report
+    )
 
 
 # --- Defect 1: the void branch, actually pinned ---------------------------
@@ -120,6 +165,60 @@ def test_voided_report_with_regimes_hides_the_uplift_and_regime_section():
 
     report = render_report(voided)
     assert "was not computed" in report
+    assert "0.190" not in report
+    assert "regime1_temporal" not in report
+
+
+# --- Important 1 (fix round 1): `voided` and `verdict == VOID` must agree -
+#
+# The payload carries the "is this run void" fact in two places:
+# `payload["voided"]` and `payload["verdict"] == "VOID"`. Before this fix
+# round, only `payload["voided"]` gated the early-return, while the header
+# rendered `payload.get("verdict", "VOID")` independently -- so a payload
+# with disagreeing keys (a real bug, or the header's own "default to VOID
+# when `verdict` is missing" behavior not being honored by the body) could
+# render a GREEN headline uplift number under a VOID title, or a VOID header
+# over a fully-rendered GREEN body. Measured by the reviewer with
+# `{"verdict": "VOID", "voided": False}` plus populated regimes: the old code
+# rendered `# Validation result — VOID` followed by the full uplift/verdict
+# lines from the GREEN regime underneath it.
+
+
+def test_voided_true_forces_a_void_header_even_if_verdict_disagrees():
+    payload = copy.deepcopy(PAYLOAD)
+    payload["voided"] = True
+    payload["verdict"] = GREEN  # disagreeing keys -- `voided` must win
+    report = render_report(payload)
+    assert report.splitlines()[0].endswith(VOID)
+    assert "0.190" not in report
+    assert "regime1_temporal" not in report
+
+
+def test_verdict_void_forces_the_void_branch_even_if_voided_says_false():
+    # The exact case the reviewer measured: `voided=False` but
+    # `verdict="VOID"`. A gate that only checks `payload["voided"]` renders
+    # this as a VOID header over a fully-rendered (GREEN) body.
+    payload = copy.deepcopy(PAYLOAD)
+    payload["voided"] = False
+    payload["verdict"] = VOID
+    report = render_report(payload)
+    assert report.splitlines()[0].endswith(VOID)
+    assert "0.190" not in report
+    assert "regime1_temporal" not in report
+
+
+def test_omitted_verdict_key_does_not_leak_regime_content_under_a_void_header():
+    # `payload.get("verdict", VOID)` defaults the HEADER to VOID when
+    # `verdict` is missing entirely. Before this fix, that default applied
+    # only to the header string -- the body's `payload.get("voided")` check
+    # doesn't know about the default, so a `voided=False` payload with no
+    # `verdict` key at all rendered a VOID title over a full GREEN body with
+    # no explicit misconfiguration anywhere.
+    payload = copy.deepcopy(PAYLOAD)
+    payload["voided"] = False
+    del payload["verdict"]
+    report = render_report(payload)
+    assert report.splitlines()[0].endswith(VOID)
     assert "0.190" not in report
     assert "regime1_temporal" not in report
 
@@ -194,6 +293,17 @@ def test_json_safe_recurses_through_nested_dicts_lists_and_arrays():
     assert _json_safe(nested) == {"a": [{"b": 3, "c": None}, [1.0, 2.0, None]]}
 
 
+def test_json_safe_handles_a_0d_ndarray():
+    # `np.array(1.0).tolist()` returns a bare scalar (`1.0`), not a length-1
+    # list -- comprehending over it (`for v in value.tolist()`) iterates the
+    # scalar and raises "'float' object is not iterable" instead of
+    # converting it. A 0-d array is what `np.asarray(scalar)` or a reduction
+    # with no remaining axes produces, so this isn't a hypothetical shape.
+    assert _json_safe(np.array(1.0)) == 1.0
+    assert type(_json_safe(np.array(1.0))) is float
+    assert _json_safe(np.array(float("nan"))) is None
+
+
 def test_json_safe_raises_instead_of_stringifying_an_unserializable_object():
     class Unserializable:
         pass
@@ -249,3 +359,31 @@ def test_fmt_formats_finite_values_and_falls_back_to_n_a():
     assert _fmt(float("nan")) == "n/a"
     assert _fmt(float("inf")) == "n/a"
     assert _fmt(None) == "n/a"
+
+
+# --- Minor (fix round 1): write_results must not leave a mismatched pair --
+#
+# `out_dir` can be a re-used directory from a previous run. Writing
+# results.json first and rendering the Markdown second means a failure
+# partway through `render_report` leaves a FRESH results.json next to a
+# STALE report.md -- someone reading the pair sees this run's JSON numbers
+# under last run's prose. Building both strings before writing either means a
+# failure leaves the previous run's pair untouched (stale, but internally
+# consistent) instead.
+
+
+def test_write_results_does_not_leave_a_mismatched_pair_on_render_failure(tmp_path):
+    write_results(tmp_path, PAYLOAD)
+    original_results = (tmp_path / "results.json").read_text()
+    original_report = (tmp_path / "report.md").read_text()
+
+    broken = copy.deepcopy(PAYLOAD)
+    del broken["regimes"]["regime1_temporal"]["rungs"]  # render_report will KeyError
+
+    with pytest.raises(KeyError):
+        write_results(tmp_path, broken)
+
+    # Neither file was touched by the failed call -- both still reflect the
+    # last successful run.
+    assert (tmp_path / "results.json").read_text() == original_results
+    assert (tmp_path / "report.md").read_text() == original_report

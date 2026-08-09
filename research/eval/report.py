@@ -1,7 +1,11 @@
 """The diligence artifact: results.json plus a one-page Markdown report.
 
 The report renders whatever `verdict.py` decided. There is no path here that
-lets a human choose a different headline, which is the point.
+lets a human choose a different headline, which is the point -- which is also
+why `render_report` treats `payload["voided"]` and `payload["verdict"] ==
+VOID` as two spellings of one fact rather than two independent switches: a
+payload that sets only one (or, worse, neither -- an omitted `verdict` key)
+must not let the header and the body disagree about whether this run is void.
 
 `results.json` is handed to whoever is doing diligence, so it must parse as
 JSON *everywhere* -- not just in Python. Plain `json.dumps` emits bare
@@ -24,6 +28,8 @@ import math
 from pathlib import Path
 
 import numpy as np
+
+from eval.verdict import VOID
 
 RESULTS_FILE = "results.json"
 REPORT_FILE = "report.md"
@@ -55,7 +61,14 @@ def _json_safe(value):
     if isinstance(value, (list, tuple)):
         return [_json_safe(v) for v in value]
     if isinstance(value, np.ndarray):
-        return [_json_safe(v) for v in value.tolist()]
+        # `.tolist()` on a 0-d array returns a bare scalar, not a length-1
+        # list -- iterating that scalar (the previous `for v in value.tolist()`
+        # form) raised "'float' object is not iterable". Recursing on the
+        # `.tolist()` result directly, instead of comprehending over it,
+        # handles 0-d/1-d/n-d uniformly: a scalar falls into the float/int/
+        # bool branches below, a (nested) list falls into the list branch
+        # above.
+        return _json_safe(value.tolist())
     if isinstance(value, np.bool_):
         return bool(value)
     if isinstance(value, np.integer):
@@ -103,9 +116,19 @@ def _rung_table(rungs: dict) -> list[str]:
 
 
 def render_report(payload: dict) -> str:
-    verdict = payload.get("verdict", "VOID")
+    # `voided` and `verdict == VOID` are two representations of one fact, and
+    # a payload assembled under a bug (or one that simply omits `verdict`)
+    # can set only one of them. Computing a single `voided` bool up front --
+    # rather than gating the header on `payload["verdict"]` and the
+    # early-return below on `payload["voided"]` separately -- means the two
+    # can never disagree: whichever key says VOID wins, and the header can
+    # never promise a headline the body doesn't render (or vice versa). This
+    # does not raise on disagreement: a malformed payload still gets an
+    # artifact, just one that reads VOID.
+    voided = bool(payload.get("voided")) or payload.get("verdict", VOID) == VOID
+    band = VOID if voided else payload["verdict"]
     lines: list[str] = [
-        f"# Validation result — {verdict}",
+        f"# Validation result — {band}",
         "",
         f"Snapshot: `{payload['snapshot'].get('producer', 'unknown')}` · "
         f"{payload['snapshot'].get('rows', '?')} posts · "
@@ -118,7 +141,7 @@ def render_report(payload: dict) -> str:
         mark = "PASS" if control["passed"] else "FAIL"
         lines.append(f"- **{control['name']}** — {mark}. {control['detail']}")
 
-    if payload.get("voided"):
+    if voided:
         # Stop here, unconditionally -- even if `regimes` was already computed
         # (a pipeline can build a regime's numbers and only THEN have a
         # control fail). Rendering them below would leak a headline number
@@ -160,5 +183,13 @@ def render_report(payload: dict) -> str:
 def write_results(out_dir: Path, payload: dict) -> None:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / RESULTS_FILE).write_text(json.dumps(_json_safe(payload), indent=2) + "\n")
-    (out_dir / REPORT_FILE).write_text(render_report(payload))
+    # Compute BOTH outputs before writing either. `out_dir` can be a re-used
+    # directory from a previous run: writing results.json first and only then
+    # rendering the Markdown means a failure partway through `render_report`
+    # leaves a FRESH results.json beside a STALE report.md -- a mismatched
+    # pair, not a clearly-stale one. Building both strings first means a
+    # failure in either leaves the previous run's pair untouched instead.
+    report_text = render_report(payload)
+    results_text = json.dumps(_json_safe(payload), indent=2) + "\n"
+    (out_dir / RESULTS_FILE).write_text(results_text)
+    (out_dir / REPORT_FILE).write_text(report_text)
