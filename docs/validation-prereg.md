@@ -62,6 +62,11 @@ label proves unusable, that is a **negative result plus a new pre-registration**
 **The baseline to beat is `max(B1, B2)`** — chosen before seeing results, so a weak B1 cannot be
 presented as the comparison after the fact.
 
+**B0 reports as `n/a`, by construction, not by bug.** B0 predicts one constant per creator (that
+creator's historical mean), so within-creator Spearman ρ — the primary metric (§3) — is undefined for
+_any_ data at that rung: a rank correlation needs variation to rank. Every run's report renders `B0 |
+n/a`. That is the null floor doing its job, not a rung that failed to compute.
+
 ## 6. Success threshold — the number that makes this falsifiable
 
 | Outcome    | Criterion                                                                                                                                                                                      | Committed action                                                                               |
@@ -154,17 +159,30 @@ Stated here so they cannot be presented as discoveries later:
   been checked against real anatomy (see `resonance-model-design.md` §2e). That affects the _why_
   axes, not the fused-latent B3 result.
 - **Negative-control false-positive rate** — measured on the harness's own synthetic worlds, not on
-  a cohort (30-seed sweeps): `brain_average` (ceiling 0.10) fires on ~8 of 30 seeds on the null world
-  and ~8 of 30 on the signal world (~27%); `label_shuffle` (tolerance 0.10) fires on ~9 of 30 seeds on
-  the null world and ~5 of 30 on the signal world, and a separate 20-seed sweep found 4 firings:
-  three sitting right on the boundary (−0.100, −0.102, +0.105) and one well past it (−0.145, roughly
-  45% beyond the 0.10 threshold). Both thresholds are round numbers
-  chosen without a power calculation, applied to a statistic whose standard deviation is ≈0.085 at 40
-  creators. Both fail **closed** — a false positive VOIDs a good run, it never passes a leaking one —
-  so the direction is safe, but a VOID will sometimes mean "resample," not "leak." Neither threshold
-  has been changed: lowering a pre-registered threshold after watching it fire is the post-hoc
-  adjustment this pre-registration exists to prevent. Stated here so they cannot be presented as
-  discoveries later. See [Amendment 3](#amendments).
+  a cohort, by `research/sweep_controls.py`: it sweeps the world seed (the same value also passed to
+  `run_controls`) over a stated window, draws a fresh `NULL_WORLD` / `SIGNAL_WORLD` at each seed, and
+  reports how often each control fires on data that was never contaminated. Reproduce with, from
+  `research/`: `./.venv/bin/python sweep_controls.py --start 0 --count 30`. The window is `[0, 30)` —
+  stated in advance, not chosen after seeing where a control fires. Measured:
+
+  | Control (threshold)                 | Null world            | Signal world         |
+  | ----------------------------------- | --------------------- | -------------------- |
+  | `label_shuffle` (tolerance 0.10)    | 4/30 (13%), sd 0.061  | 5/30 (17%), sd 0.070 |
+  | `brain_average` (ceiling 0.10)      | 11/30 (37%), sd 0.093 | 8/30 (27%), sd 0.078 |
+  | `feature_label_leak` (ceiling 0.95) | 0/30 (0%), sd 0.039   | 0/30 (0%), sd 0.025  |
+
+  `feature_label_leak` firing 0/30 in both worlds is a real and reassuring result — the statistic it
+  gates on (max |ρ(feature, label)| over train rows) stays far from its ceiling on clean data. The
+  other two controls are round numbers chosen without a power calculation, applied to a statistic
+  whose standard deviation is **not** one blended figure — it runs 0.06–0.09 depending on control and
+  world, per the table above. Both fail **closed** — a false positive VOIDs a good run, it never
+  passes a leaking one — so the direction is safe, but on `brain_average`/null (11/30 = 37%) a VOID
+  will mean "resample," not "leak," more often than a reader would guess from the other cells alone.
+  Neither threshold has been changed: lowering a pre-registered threshold after watching it fire is
+  the post-hoc adjustment this pre-registration exists to prevent. An earlier draft of this bullet
+  understated these rates and could not be reproduced from a single stated command — see the
+  same-day correction in [Amendment 3](#amendments) for why the numbers above differ from that draft.
+  Stated here so they cannot be presented as discoveries later.
 
 ## Amendments
 
@@ -199,12 +217,27 @@ verdict row, marked headline, and a separate Regime 2 verdict row, reported and 
 headline. **Attestation:** made before any cohort data existed; the two regimes can legitimately
 disagree on synthetic worlds by construction, which is what surfaced the gap this amendment closes.
 
-**Amendment 3 (2026-08-09) — §9 gains the measured control false-positive rates.** Two of the three
-negative controls fire on _clean_ synthetic data at double-digit rates (see §9's new bullet for the
-numbers). Neither threshold (`SHUFFLE_TOLERANCE`, `BRAIN_AVERAGE_CEILING`) was changed — disclosure,
-not adjustment, is what a pre-registration commits to. **Attestation:** measured entirely on the
-harness's own synthetic null/signal worlds across 30-seed and 20-seed sweeps; no cohort exists to
-have leaked into this measurement, and none had been observed.
+**Amendment 3 (2026-08-09) — §9 gains the measured control false-positive rates, corrected same-day
+against a committed script.** Two of the three negative controls fire on _clean_ synthetic data at
+double-digit rates (see §9's bullet for the numbers). Neither threshold (`SHUFFLE_TOLERANCE`,
+`BRAIN_AVERAGE_CEILING`) was changed — disclosure, not adjustment, is what a pre-registration commits
+to. This amendment's numbers were themselves wrong on first landing, in the flattering direction, and
+the correction is recorded rather than silently overwritten: the original draft blended a null-world
+figure measured from world seeds 12–41 with a signal-world figure measured from seeds 0–29 into one
+sentence, and reported one blended standard deviation (≈0.085) for four different measurements — and
+no script existed anywhere in the repo to say which seed window was the intended one, so a second,
+independent re-measurement (seeds 0–29 throughout) produced different counts for the same disclosure.
+`research/sweep_controls.py` now exists specifically so this is not possible again: it fixes the
+window (`[0, 30)`, world seed doubling as the seed passed to `run_controls`, stated as defaults rather
+than chosen after the fact) and is the sole source of the numbers in §9. The corrected figures are
+worse, not better, than the ones they replace — most notably `brain_average` on the null world, 11/30
+(37%) against a first-draft ~8/30 (~27%), and the null world is the one whose seed (`NULL_WORLD` = 15)
+was itself chosen because it was the first at or after a seed rejected for the same control firing
+(see the comment in `research/eval/synth.py`), so understating this particular rate compounded two
+optimistic choices in the same direction. **Attestation:** both the original and the corrected
+measurement were made entirely on the harness's own synthetic null/signal worlds, now reproducibly via
+`sweep_controls.py`; no cohort exists to have leaked into either measurement, and none had been
+observed at any point.
 
 **Amendment 4 (2026-08-09) — §8 reports all three controls, not one.** §8's results table asked only
 "Label-shuffle control passed?", but the harness gates the run on **three** controls —

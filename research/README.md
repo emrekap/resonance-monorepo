@@ -126,3 +126,6 @@ Sketch, for whoever writes it:
 - **Everything is seeded.** A run must be reproducible from its manifest.
 - **Red-first precedence** in `verdict.py` is a commitment, not a style choice. Do not reorder it.
 - **A voided run exits non-zero.** Do not "simplify" `main` to always return 0.
+- **False-positive rates are measured, not assumed.** `sweep_controls.py` reproduces the negative-
+  control disclosure in `docs/validation-prereg.md` §9; if that disclosure is ever revisited, regenerate
+  it from the script rather than hand-editing the numbers.
