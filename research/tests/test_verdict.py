@@ -74,6 +74,42 @@ def test_includes_zero_is_inclusive_lower_bound_exactly_zero_is_red():
     assert verdict(Interval(point=0.15, lo=0.0, hi=0.30), p_value=0.001) == RED
 
 
+# --- Task 11: a wholly-NEGATIVE CI is Red, not Yellow ---------------------
+#
+# Found by the end-to-end null world, which is the shape this misses: B3
+# carries nothing, B1 carries real signal, so the uplift is about -0.36 with a
+# CI of [-0.56, -0.17]. That CI does not include zero, and Yellow's prereg row
+# requires the uplift to be "Positive" -- so the untouched `otherwise` returned
+# YELLOW for the clearest refutation the experiment can produce, recommending
+# "iterate and re-run" where §6 commits to "pivot the technical story". 7 of 8
+# null-world seeds banded YELLOW before this.
+
+
+def test_uplift_entirely_below_zero_is_red_not_yellow():
+    assert verdict(Interval(point=-0.36, lo=-0.56, hi=-0.17), p_value=0.001) == RED
+
+
+def test_a_small_negative_uplift_is_still_red_when_the_whole_ci_is_negative():
+    # Sub-threshold in magnitude, so the "positive but small" Yellow rule is
+    # the one a careless reading would reach for.
+    assert verdict(Interval(point=-0.02, lo=-0.04, hi=-0.01), p_value=0.04) == RED
+
+
+def test_upper_bound_exactly_zero_is_red_via_includes_zero():
+    # hi == 0 is already `includes_zero`; the negative-CI helper is strictly
+    # hi < 0, so the two rules are disjoint and neither boundary is orphaned.
+    assert verdict(Interval(point=-0.10, lo=-0.20, hi=0.0), p_value=0.04) == RED
+
+
+def test_explain_red_by_a_wholly_negative_ci_says_worse_not_includes_zero():
+    sentence = explain(Interval(point=-0.36, lo=-0.56, hi=-0.17), p_value=0.001)
+    assert sentence.startswith("RED")
+    assert "entirely below zero" in sentence
+    assert "worse than the baseline" in sentence
+    # Must not claim the interval includes zero -- it does not.
+    assert "includes zero" not in sentence
+
+
 # --- (c) explain: every branch, asserted on the substring that names the rule ---
 
 
@@ -151,6 +187,8 @@ def test_explain_band_always_matches_verdict_band():
         (Interval(point=0.10, lo=0.05, hi=0.15), 0.049),
         (Interval(point=0.15, lo=0.0, hi=0.30), 0.001),
         (Interval(point=0.15, lo=nan, hi=0.30), 0.001),
+        (Interval(point=-0.36, lo=-0.56, hi=-0.17), 0.001),
+        (Interval(point=-0.10, lo=-0.20, hi=0.0), 0.04),
     ]
     for uplift, p_value in cases:
         band = verdict(uplift, p_value)

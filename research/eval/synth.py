@@ -55,6 +55,21 @@ SIGNAL_WORLD = World(
 )
 
 #: B3 carries nothing beyond what metadata already explains. Must return RED.
+#:
+#: The seed moved from 12 to 15 when the end-to-end run was first assembled
+#: (Task 11). Seed 12 draws a cohort in which the naive brain-wide average
+#: clears the pre-registered Green bar by chance (|rho| = 0.130 against
+#: `controls.BRAIN_AVERAGE_CEILING` = 0.10), so that draw is a legitimately
+#: VOID run, not a Red one -- the wrong fixture for "B3 carries no signal, so
+#: the harness must return RED". This is not a rare draw: on a world with zero
+#: neuro signal the control's statistic has mean 0.007 and sd 0.083 over 50
+#: seeds (per-creator Spearman over ~5 test posts is noisy, and 40 creators is
+#: not enough to average that away), and it trips the ceiling in 24% of them.
+#: The control is behaving as designed -- it fails closed -- so the FIXTURE is
+#: what had to change. 15 is the first seed at or after 12 whose three negative
+#: controls all pass, chosen by that rule alone and before the verdict was
+#: looked at. `test_the_null_worlds_controls_all_pass` pins that precondition
+#: so a future seed change cannot silently turn the RED test into a VOID one.
 NULL_WORLD = World(
     name="null",
     n_creators=40,
@@ -63,7 +78,7 @@ NULL_WORLD = World(
     meta_effect=0.35,
     text_effect=0.25,
     noise=0.7,
-    seed=12,
+    seed=15,
 )
 
 #: The label is copied into a neuro column. The label-shuffle control must catch
