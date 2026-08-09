@@ -48,8 +48,19 @@ actual emotion/reward/memory centers (amygdala, ventral striatum/nucleus accumbe
 are **not in this output at all.** So any "emotion" or "memorability" axis is built from _cortical
 proxies_, not the real circuitry. That fact sets the defensibility tiers.
 
-Parcellate vertices with a standard atlas (**Yeo-7/17 networks** is the clean, well-cited choice;
-Glasser for finer auditory/language parcels), then roll parcels up into product axes:
+Parcellate vertices with a standard atlas, then roll parcels up into product axes.
+
+> **Settled since, and shipped:** the atlas is **Schaefer-2018, 400 parcels, 17 networks**, on
+> fsaverage5 — not the Yeo-7 this note first proposed. Schaefer's 17-network solution is a refinement
+> of Yeo's, so the network vocabulary below is unchanged; what it buys is the sub-parcel split that
+> makes two of these axes measurable at all. Yeo-7 collapses auditory cortex into one Somatomotor
+> network that also carries hand and foot motor, so an "audio engagement" score off it is mostly
+> dilution — the 17-network solution exposes `SomMotB_Aud` (Heschl's/STG) on its own. Same story for
+> language, which needs Temporo-parietal and Default-B separated from the rest of Default.
+> The mapping is committed and reviewable in
+> [`apps/ml/atlas/axis_map.py`](../apps/ml/atlas/axis_map.py); the reasoning is in
+> [`superpowers/specs/2026-08-07-analysis-insights-design.md`](superpowers/specs/2026-08-07-analysis-insights-design.md)
+> §"Decision 3". Glasser remains the option if auditory/language parcels ever need to be finer still.
 
 | Product axis (user sees)     | Cortical networks / regions                                 | Driven by            | Defensibility                                                                    |
 | ---------------------------- | ----------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------- |
@@ -66,7 +77,7 @@ _explanation_, the data is the _proof_.
 
 ### 1b. Result-screen hierarchy (mobile)
 
-```
+```text
 ┌─────────────────────────────────────┐
 │  ‹ back            dogg1.mp4     ⋯   │
 │  ┌───────────────┐                   │
@@ -115,8 +126,10 @@ the object shown not to predict engagement in aggregate. Use a **feature hierarc
    _before_ projecting to brain space. The per-timestep fused hidden states carry more than what
    survives projection to 20k vertices. Pool (mean/max/attention) for clip-level; keep per-timestep
    for the timeline.
-2. **Network-aggregated brain predictions (interpretable).** Roll 20k vertices into Yeo-7 →
-   `[7 × T]`. Lower power than the latent, but this powers the explainable "why" axes.
+2. **Network-aggregated brain predictions (interpretable).** Roll the ~20k vertices into networks →
+   `[networks × T]`. Lower power than the latent, but this powers the explainable "why" axes. This is
+   the one rung that ships today: `apps/ml/parcellation.py` reduces the tensor to the five product
+   axes of §1a per segment, and the per-axis curves are what the result screen's timeline draws.
 3. **Content/pacing metadata (cheap).** `n_events`, cut density, speech rate, loudness, captions,
    duration. A strong baseline on its own (matters — see §2f).
 
@@ -203,6 +216,13 @@ creators can assemble.
 - **Goodhart/feedback.** Once creators optimize to the score, the score↔reality link drifts. Monitor
   calibration over time.
 - **Small-n creators.** Most have <50 posts. Personalization must degrade to cohort/global.
+- **The axis→network mapping is unvalidated.** Open, and worth stating plainly because everything in
+  §1a rests on it: the shipped parcellation asserts the atlas has the expected number of vertices,
+  but **its vertex order has never been checked against real anatomy.** A transposed or
+  differently-ordered surface would still average to plausible-looking numbers on every axis — the
+  failure is silent by construction. The cheap check is a high-motion clip, which should light the
+  visual band and little else; until one has run, treat the five axes as wired-up rather than
+  verified. Tracked in `CLAUDE.md`'s TODO.
 
 ### 2f. How we know it's real — baselines + the killer experiment
 

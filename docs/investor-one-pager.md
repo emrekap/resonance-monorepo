@@ -16,6 +16,12 @@ reserved for big brands. Nobody can reliably answer the one question that matter
 instant **Resonance Score (0–100)** plus concrete fixes - _before_ you publish. Predictions are
 **grounded in neuroscience** and **personalized to your actual audience**, not a generic average.
 
+The score is deliberately **relative to your own history** - "top 18% of your recent posts," not a
+universal grade. That is the statistically correct framing (the creator is the confounder you have
+to condition on, so absolute cross-creator numbers are the ones that lie), and it means the product
+is useful before any cross-creator calibration exists. The absolute, calibrated score is what this
+raise funds - see the milestones below.
+
 **Two ways in.** A solo creator checks a reel before posting. A **brand's marketing team
 pre-tests a new commercial** - say a beverage company with a 30-second spot: compare edits, find
 the weakest three seconds, and forecast audience response **before committing a seven-figure media
@@ -39,12 +45,20 @@ point of wasted ad spend avoided is the ROI.
 
 ## Product
 
-- **Resonance Score** per asset, pre-post.
+Built and running today:
+
+- **Resonance Score** per asset, pre-post - a rank against your own recent work.
 - **Engagement curve over the timeline** - _"your hook lands at 0:02, attention dips at 0:07 -
-  trim it."_ Actionable, and demoable today from the model's per-segment output.
-- **A/B variants** - upload 2–3 cuts/thumbnails, get the predicted winner.
-- **Audience personalization** from connected accounts.
-- **Actionable tips** - hook, ideal length, caption/hashtags, posting time.
+  trim it."_ Drawn from the model's per-segment output across five brain networks.
+- **Actionable tips** - hook, pacing, trim points, audio, clarity, length, caption.
+- **Account connection** (YouTube) - the pipe the training data comes through.
+
+What the raise builds:
+
+- **A/B variants** - upload 2–3 cuts/thumbnails, get the predicted winner. Ranking is the most
+  defensible use of a noisy model, which is why it is first in line.
+- **Calibrated absolute score** - once the validation below clears its pre-registered bar.
+- **Audience personalization** from connected-account backfill.
 - **Brand & agency dashboard + API** - the monetization surface.
 - **Advisory for high-stakes launches (enterprise)** - the model's data-driven insight paired with
   human subject-matter experts to guide seven-figure creative decisions.
@@ -79,9 +93,19 @@ resonance.** Our moat is the model **plus** the proprietary per-creator engageme
 
 ### Traction & 12-month milestones
 
-Today: **working TRIBE-powered inference prototype** (live API). On $600K: ship private beta →
-train first proprietary calibrated model (v1) → demonstrate measurable prediction lift vs.
-baseline → convert beta users to paid credits → hit the metrics to raise a seed.
+**Today:** TRIBE v2 inference runs on a GPU service, and the full product path around it is
+built - mobile app, API, queue, and the scoring/insight pipeline that turns a brain tensor into a
+score, a timeline and written fixes. It is typechecked, unit-tested and wired end to end; the
+remaining step before beta is running real creator clips through it on live hardware.
+
+**Also today, and unusual at pre-seed:** the experiment that could _disprove_ the thesis is written
+down and dated before any result exists - one primary metric, one label, a baseline to beat, a
+Δρ ≥ 0.10 bar and a committed action if it fails (`docs/validation-prereg.md`). Diligence can hold
+us to it.
+
+**On $600K:** private beta → recruit the validation cohort and produce the pre-registered number →
+train the first proprietary calibrated model (v1) → convert beta users to paid credits → hit the
+metrics to raise a seed.
 
 ## The ask
 
@@ -91,7 +115,8 @@ baseline → convert beta users to paid credits → hit the metrics to raise a s
 
 ## Team
 
-**[Emre Kaplan - engineer / founder]**
+**Emre Kaplan** - engineer / founder. Solo today; the ~50% ML/engineering line of the ask is the
+first hires.
 
 ---
 

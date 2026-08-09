@@ -38,6 +38,13 @@ Lock these **before** looking at any test-set outcome, and store them in the rep
 This is both scientific hygiene (kills p-hacking) and a diligence asset — a dated pre-registration
 that we then meet is far more convincing to a technical investor than a cherry-picked chart.
 
+> **Done:** [`validation-prereg.md`](validation-prereg.md), committed 2026-08-08 — before any cohort
+> was recruited and before any result was observed. It locks one primary task (ranking), one primary
+> metric (within-creator Spearman ρ), one label (`averageViewPercentage`), the baseline to beat
+> (`max(B1, B2)`), and the Δρ ≥ 0.10 threshold with its committed Red action. Nothing above its §8 may
+> be edited once collection starts; a changed design means a new dated pre-registration that
+> supersedes it.
+
 ---
 
 ## 3. Cohort & data
@@ -62,8 +69,15 @@ data contract). Instagram/TikTok come later for scale.
 
 - **Task A — Ranking (PRIMARY).** Within each creator, rank their posts by an engagement/retention
   outcome. This mirrors the MVP hero feature (A/B + "top X% of your posts") and is the most
-  noise-robust use of the model. **Primary label:** `averageViewPercentage` (completion) and/or a
-  within-creator-normalized engagement-rate.
+  noise-robust use of the model. **Primary label:** `averageViewPercentage` (completion).
+
+  > **Narrowed by the pre-registration.** This section originally read "`averageViewPercentage`
+  > and/or a within-creator-normalized engagement-rate." An "and/or" on the primary label is exactly
+  > the degree of freedom §2 exists to remove — two candidate labels is two chances to declare
+  > success. [`validation-prereg.md`](validation-prereg.md) §4 locks the single label above;
+  > engagement-rate is now a secondary reported outcome. The prereg is authoritative wherever it and
+  > this spec differ.
+
 - **Task B — Timeline (SECONDARY).** Predict the per-second retention curve `retention(t)` from
   per-timestep features. **Label:** YouTube `audienceWatchRatio` × `elapsedVideoTimeRatio`. This is
   the scientifically novel claim (segment-level, calibrated) but rides on YouTube-only data.
@@ -85,8 +99,12 @@ Each rung adds information; the treatment must beat the cheap rungs.
 | **B3** | **TRIBE neuro-features (treatment)**                                     | The hypothesis                   |
 | **B4** | TRIBE + metadata + text (full model)                                     | Ceiling / does neuro add on top? |
 
-**Ablations within B3** (to find _what_ carries signal): fused latent vs. network-aggregated (Yeo-7)
-vs. raw brain tensor; and per-modality (video-only / audio-only / text-only encoders). The key
+**Ablations within B3** (to find _what_ carries signal): fused latent vs. **network-aggregated
+(Schaefer-2018, 400 parcels / 17 networks — the shipped atlas, not the Yeo-7 this spec first named;
+see [`resonance-model-design.md`](resonance-model-design.md) §1a)** vs. raw brain tensor; and
+per-modality (video-only / audio-only / text-only encoders). Note that the network-aggregated rung
+inherits the unverified vertex-order caveat in §2e of that note — a failure there would quietly
+depress this ablation while leaving the fused-latent rung intact. The key
 scientific result is **B3 > B1, B2** and **B4 > B1+B2 combined** — i.e. neuro-features add
 _orthogonal_ signal, not a restatement of metadata.
 
@@ -182,6 +200,41 @@ Committing to the **Red** action in advance is what makes this honest rather tha
 
 Target: **a defensible number in ~3–5 weeks**, dominated by cohort recruitment and backfill, not
 modeling.
+
+### 11a. The gating dependency, stated properly
+
+Steps 1 and 2 are where this experiment actually fails, and they had one line between them. Both
+are unsolved, and neither is a modeling problem.
+
+**Analytics access is the easy half.** `yt-analytics.readonly` on an owner-authorized channel gives
+everything §7 needs, and `apps/api` already runs the YouTube connect flow that mints those tokens
+(though it has not yet been run against real Google credentials). Backfilling 40 posts × 50
+creators is quota planning, not research.
+
+**The video files are the hard half, and there is no API for them.** Per the data contract's
+gotcha #1, YouTube offers **no official source download** — so a corpus of 2,000 clips cannot be
+assembled from the same OAuth grant that yields the labels. That leaves three routes, none free:
+
+| Route                                  | Cost                                                     | Viability                                              |
+| -------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------ |
+| Creators upload their own source files | High friction — 40 files each, on top of granting OAuth  | Realistic only for a **paid** or design-partner cohort |
+| Capture at post time going forward     | Zero backfill; waits months for N to accumulate          | Kills the "week 3, not month 9" property entirely      |
+| Scrape the published stream            | ToS minefield (data contract §gotchas), legally unpriced | **Not an option** for a diligence artifact             |
+
+**Consequence for planning:** the ~3–5 week target assumes the first route is solved, and it is the
+single largest unpriced item in this spec. Recruiting 50 creators willing to grant analytics access
+_and_ ship 40 source files each is a paid-cohort or design-partner motion with a real budget line,
+not an ask. Two things follow, and both should be decided before any GPU is provisioned:
+
+- **Price the cohort first.** Per-creator incentive × 50 is a number that belongs next to the GPU
+  line item, and it is probably larger.
+- **A smaller, complete cohort beats a larger, partial one.** §7's floor is ≥20 posts per creator
+  and ≥30 creators. Twenty-five creators with full file sets is a valid experiment; fifty with half
+  their files each is not, because the missing half will not be missing at random — the older and
+  the deleted posts go first, and both correlate with the outcome.
+
+Nothing in this section changes the pre-registration: it constrains cohort **size**, which §7 of
+[`validation-prereg.md`](validation-prereg.md) already frames as a floor rather than a target.
 
 ---
 
