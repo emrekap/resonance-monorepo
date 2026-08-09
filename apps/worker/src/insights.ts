@@ -242,13 +242,20 @@ export function insightsEnabled(): boolean {
 }
 
 /**
- * Ask Claude for recommendations. Returns `[]` rather than throwing, ever.
+ * Ask Claude for recommendations.
  *
- * The caller has already committed the analysis as SUCCEEDED with its score,
- * timeline and axes. Throwing here would fail the BullMQ job and retry the whole
- * handler — re-billing this call and burning attempts that exist for real
- * failures — because a copywriting request had a bad minute. Tips are the one
- * part of the screen that is allowed to be missing.
+ * **This throws on every failure.** `writeRecommendations` in `results.ts` is
+ * what makes the stage best-effort, by catching and recording the reason on
+ * `raw_stats.insights`. Swallowing here instead would return `[]`, which is
+ * indistinguishable from a model that had nothing to say — and a missing tips
+ * section nobody can explain is worse than one that names its cause.
+ *
+ * What must not happen is an exception reaching BullMQ: that retries the whole
+ * handler, re-billing this call and burning attempts that exist for real
+ * failures, because a copywriting request had a bad minute. The analysis is
+ * already committed SUCCEEDED with its score, timeline and axes; tips are the
+ * one part of the screen allowed to be missing. **Any new call site needs the
+ * same try/catch.**
  */
 export async function generateRecommendations(
   input: InsightInput,
@@ -256,10 +263,19 @@ export async function generateRecommendations(
 ): Promise<Recommendation[]> {
   const anthropic = deps.anthropic ?? (client ??= new Anthropic());
 
-  const response = await anthropic.messages.create({
+  const response = await anthropic.beta.messages.create({
     model: 'claude-opus-5',
     max_tokens: MAX_TOKENS,
     system: SYSTEM_PROMPT,
+    // Opus 5 runs safety classifiers that can decline a request outright, and a
+    // clip's transcript is arbitrary creator speech — nothing here controls what
+    // it contains. `'default'` re-runs a declined request on Anthropic's
+    // recommended substitute server-side, routed by refusal category, so the
+    // usual outcome is tips from a slightly older model rather than no tips at
+    // all. Named rather than pinned to a model so a deprecation is not a code
+    // change here.
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
     // Structured outputs rather than a tool: there is nothing to execute, and
     // this constrains the shape without a parse-and-retry loop.
     //
@@ -301,11 +317,22 @@ export async function generateRecommendations(
     messages: [{ role: 'user', content: buildPrompt(input) }],
   });
 
-  // Checked before touching `content`: a refusal returns HTTP 200 with content
-  // that is empty or partial, so indexing into it blind would throw something
-  // unhelpful instead of saying what happened.
+  // Both checked before touching `content`, because both return HTTP 200 with
+  // content that is empty or partial — indexing into it blind throws something
+  // unhelpful instead of saying what happened, and this message is what lands in
+  // `raw_stats.insights` for whoever asks why a screen has no tips.
   if (response.stop_reason === 'refusal') {
-    throw new Error(`model declined to answer (${response.stop_details?.category ?? 'unknown'})`);
+    throw new Error(
+      `model declined to answer (${response.stop_details?.category ?? 'unknown'}); ` +
+        `served by ${response.model}`,
+    );
+  }
+  // Thinking is on by default on Opus 5 and shares MAX_TOKENS with the reply, so
+  // a long enough transcript can spend the budget before the JSON closes. The
+  // parse below would fail on the truncated object anyway; naming the cause here
+  // is the difference between "raise MAX_TOKENS" and an unexplained parse error.
+  if (response.stop_reason === 'max_tokens') {
+    throw new Error(`response truncated at max_tokens (${MAX_TOKENS}) before the JSON closed`);
   }
 
   const text = response.content.find((block) => block.type === 'text')?.text;
