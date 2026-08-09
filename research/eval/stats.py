@@ -75,10 +75,13 @@ def paired_wilcoxon(
     if values.size < 5:
         return float("nan")
     if np.allclose(values, 0.0):
-        # scipy's behavior on an all-zero difference vector does not raise —
-        # it is size-dependent: measured on scipy 1.17.1, `wilcoxon` returns
-        # p=1.0 for small n (<=10) and NaN for larger n (>=25). This branch
-        # exists to make the answer deterministic across cohort sizes, not to
-        # dodge an exception.
+        # scipy does not raise on an all-zero difference vector; it returns a
+        # p-value that depends on which test it picked. `method="auto"` uses
+        # the exact test at small n and the normal approximation above a
+        # version-dependent cutoff (n >= 14 on scipy 1.17.1), and the
+        # approximation divides by a zero standard error, so it yields NaN.
+        # `method="exact"` returns 1.0 at every n. This branch returns that
+        # same 1.0 — the exact test's answer, not an invented one — so the
+        # result does not change with cohort size or scipy version.
         return 1.0
     return float(wilcoxon(values).pvalue)
