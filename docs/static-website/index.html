@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Resonance - Predict how content resonates, before you post it</title>
+    <meta
+      name="description"
+      content="Resonance predicts how well creator and brand content will resonate and engage, built on brain-encoding AI."
+    />
+    <style>
+      :root {
+        --bg: #0b0c10;
+        --bg2: #111319;
+        --card: #15171f;
+        --border: #242733;
+        --text: #f2f3f5;
+        --muted: #9aa0ac;
+        --accent: #7c5cff;
+        --accent2: #31d0aa;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+      }
+      a {
+        color: var(--accent2);
+        text-decoration: none;
+      }
+      .wrap {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+      header {
+        padding: 28px 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--border);
+      }
+      .logo {
+        font-weight: 700;
+        font-size: 1.15rem;
+        letter-spacing: -0.02em;
+      }
+      .logo span {
+        color: var(--accent2);
+      }
+      nav a {
+        margin-left: 24px;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+      nav a:hover {
+        color: var(--text);
+      }
+      .hero {
+        padding: 96px 0 64px;
+        text-align: center;
+      }
+      .badge {
+        display: inline-block;
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        background: rgba(124, 92, 255, 0.12);
+        border: 1px solid rgba(124, 92, 255, 0.3);
+        color: #b6a6ff;
+        margin-bottom: 24px;
+      }
+      h1 {
+        font-size: clamp(2.2rem, 5vw, 3.4rem);
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        line-height: 1.1;
+        margin-bottom: 20px;
+      }
+      h1 .grad {
+        background: linear-gradient(90deg, var(--accent), var(--accent2));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .sub {
+        max-width: 640px;
+        margin: 0 auto 36px;
+        color: var(--muted);
+        font-size: 1.15rem;
+      }
+      .cta-row {
+        display: flex;
+        gap: 14px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .btn {
+        padding: 13px 26px;
+        border-radius: 10px;
+        font-weight: 600;
+        font-size: 0.98rem;
+        display: inline-block;
+      }
+      .btn-primary {
+        background: var(--accent);
+        color: #fff;
+      }
+      .btn-primary:hover {
+        background: #6b4ce6;
+      }
+      .btn-secondary {
+        border: 1px solid var(--border);
+        color: var(--text);
+      }
+      .btn-secondary:hover {
+        border-color: var(--accent2);
+        color: var(--accent2);
+      }
+      section {
+        padding: 64px 0;
+        border-top: 1px solid var(--border);
+      }
+      .section-title {
+        font-size: 1.8rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin-bottom: 12px;
+        text-align: center;
+      }
+      .section-sub {
+        color: var(--muted);
+        text-align: center;
+        max-width: 600px;
+        margin: 0 auto 48px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 20px;
+      }
+      @media (max-width: 720px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 28px;
+      }
+      .card h3 {
+        font-size: 1.05rem;
+        margin-bottom: 10px;
+      }
+      .card p {
+        color: var(--muted);
+        font-size: 0.94rem;
+      }
+      .icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        background: rgba(49, 208, 170, 0.12);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 16px;
+        font-size: 1.1rem;
+      }
+      .flow {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 40px;
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+      .flow .step {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 18px;
+        color: var(--text);
+        font-weight: 600;
+      }
+      .flow .arrow {
+        color: var(--accent2);
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 20px;
+        text-align: center;
+      }
+      @media (max-width: 720px) {
+        .stats {
+          grid-template-columns: 1fr;
+        }
+      }
+      .stat .num {
+        font-size: 2.1rem;
+        font-weight: 800;
+        color: var(--accent2);
+      }
+      .stat .label {
+        color: var(--muted);
+        font-size: 0.9rem;
+        margin-top: 4px;
+      }
+      .cta-final {
+        text-align: center;
+      }
+      footer {
+        padding: 36px 0;
+        border-top: 1px solid var(--border);
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="wrap">
+      <div class="logo">Resonance<span>.</span></div>
+      <nav>
+        <a href="#how">How it works</a>
+        <a href="#why">Why now</a>
+        <a href="#contact">Contact</a>
+      </nav>
+    </header>
+
+    <div class="hero wrap">
+      <div class="badge">Built on brain-encoding models</div>
+      <h1>Predict how content <span class="grad">resonates</span> - before you post it</h1>
+      <p class="sub">
+        Resonance scores creator and brand video, image, and audio for engagement and emotional
+        resonance, using AI trained on how human brains actually respond to media - not proxy
+        metrics guessed after the fact.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="mailto:hello@resonance.ai">Get in touch</a>
+        <a class="btn btn-secondary" href="#how">See how it works</a>
+      </div>
+    </div>
+
+    <section id="how" class="wrap">
+      <div class="section-title">From upload to insight, in one pipeline</div>
+      <div class="section-sub">
+        A single piece of content becomes a per-second resonance timeline, a composite score, and
+        concrete recommendations - automatically.
+      </div>
+      <div class="grid">
+        <div class="card">
+          <div class="icon">↑</div>
+          <h3>Upload</h3>
+          <p>Creators and brands upload video, image, or audio content directly from the app.</p>
+        </div>
+        <div class="card">
+          <div class="icon">◎</div>
+          <h3>Brain-encoding inference</h3>
+          <p>
+            A GPU worker runs our model trained to predict brain response to media, producing a
+            neural-response signal mapped to five interpretable resonance axes.
+          </p>
+        </div>
+        <div class="card">
+          <div class="icon">✓</div>
+          <h3>Score & recommend</h3>
+          <p>
+            Results are ranked against your own history, scored, and turned into a plain-language
+            verdict with specific, actionable recommendations.
+          </p>
+        </div>
+      </div>
+      <div class="flow">
+        <div class="step">Upload</div>
+        <div class="arrow">→</div>
+        <div class="step">Analyze</div>
+        <div class="arrow">→</div>
+        <div class="step">AI inference (GPU)</div>
+        <div class="arrow">→</div>
+        <div class="step">Resonance score + insights</div>
+      </div>
+    </section>
+
+    <section id="why" class="wrap">
+      <div class="section-title">Why brain-encoding, not engagement proxies</div>
+      <div class="section-sub">
+        Likes and watch-time are downstream, noisy, and gameable. Resonance predicts the thing those
+        metrics are trying to measure in the first place.
+      </div>
+      <div class="stats">
+        <div class="stat">
+          <div class="num">5</div>
+          <div class="label">interpretable resonance axes per clip</div>
+        </div>
+        <div class="stat">
+          <div class="num">Sec-by-sec</div>
+          <div class="label">timeline, not a single black-box score</div>
+        </div>
+        <div class="stat">
+          <div class="num">Pre-publish</div>
+          <div class="label">signal, before spend or reach is committed</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="contact" class="cta-final wrap">
+      <div class="section-title">Building the resonance layer for content</div>
+      <p class="sub">
+        We're a small team applying brain-encoding AI to a problem every creator and brand shares:
+        knowing what will land before it ships.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="mailto:emrekapln@gmail.com">Contact Us</a>
+      </div>
+    </section>
+
+    <footer>© 2026 Resonance. All rights reserved.</footer>
+  </body>
+</html>
