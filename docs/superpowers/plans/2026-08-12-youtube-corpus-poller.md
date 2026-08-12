@@ -3372,7 +3372,13 @@ git commit -m "feat(poller): weekly readiness report that answers the §7 questi
 **Interfaces:**
 
 - Consumes: `loadSeeds`, `createYouTubeClient`, `prismaStore`, `pollChannel`, `prismaSweepStore`, `sweepText`, `readMaturation`, `buildReadiness`, `renderReadiness`.
-- Produces: `POLL_QUEUE = 'corpus-poll'`, `POLL_JOB = { poll: 'corpus.poll', sweep: 'corpus.sweep', readiness: 'corpus.readiness' }`, `SCHEDULES = { poll: '0 3 * * *', sweep: '0 4 * * *', readiness: '0 5 * * 1' }`, `pollJobData(runAt: Date): { runAt: string }`, `runPoll(data: unknown): Promise<void>`, `runSweep(data: unknown): Promise<void>`, `runReadiness(data: unknown): Promise<void>`, `handlePollJob(job: Job<unknown>): Promise<void>`.
+- Produces: `POLL_QUEUE = 'corpus-poll'`, `POLL_JOB = { poll: 'corpus.poll', sweep: 'corpus.sweep', readiness: 'corpus.readiness' }`, `SCHEDULES = { poll: '0 3 * * *', sweep: '0 4 * * *', readiness: '0 5 * * 1' }`, `utcDayStart(moment: Date): Date`, `pollJobDataSchema`, `resolveRunAt(data: unknown, now?: Date): Date`, `runPoll(data: unknown): Promise<void>`, `runSweep(data: unknown): Promise<void>`, `runReadiness(data: unknown): Promise<void>`, `handlePollJob(job: Job<unknown>): Promise<void>`.
+
+**Where `runAt` comes from, and why not the job payload.** Every snapshot this run appends is stamped with `runAt`, and `@@unique([postId, capturedAt])` is what makes an at-least-once retry a no-op — so a retry must produce the _same_ `runAt` as the attempt it is retrying.
+
+The obvious design is to put `runAt` on the repeatable job's payload. **It does not work**, and it fails silently: BullMQ's `upsertJobScheduler` uses the template's `data` verbatim for every occurrence it materialises (`job-scheduler.js` `getNextJobOpts` merges only `opts` — the scheduled slot lands in `opts.prevMillis` and in the generated job id, never in `data`). A template built at registration time would therefore stamp _every_ poll, forever, with one frozen timestamp — every snapshot after the very first would collide on the unique key and be skipped, and the poller would report success while writing nothing.
+
+So `runAt` is **derived in the handler by quantising the wall clock to the UTC day**. Two calls on the same UTC day produce the same value, which gives the retry property directly; a retry runs within minutes of its original against a 24-hour bucket, so the boundary is never in play. It also matches the granularity `cadence.ts` already compares at. An explicit `runAt` on the payload is still honoured, for a manual backfill of a specific day.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3381,20 +3387,45 @@ git commit -m "feat(poller): weekly readiness report that answers the §7 questi
 ```ts
 import { describe, expect, test } from 'bun:test';
 
-import { pollJobDataSchema } from './jobs.ts';
+import { pollJobDataSchema, resolveRunAt, utcDayStart } from './jobs.ts';
 import { SCHEDULES } from './queues.ts';
 
-describe('the job payload', () => {
-  test('carries the run timestamp, because capturedAt comes from it', () => {
-    // A repeatable job that recomputed `runAt` from `new Date()` on each
-    // attempt would give a retry a different `capturedAt`, and the unique key
-    // that makes the append idempotent would no longer collide.
-    const parsed = pollJobDataSchema.parse({ runAt: '2026-08-12T03:00:00.000Z' });
-    expect(parsed.runAt).toBe('2026-08-12T03:00:00.000Z');
+describe('resolveRunAt', () => {
+  test('quantises the wall clock to the UTC day', () => {
+    const at = resolveRunAt({}, new Date('2026-08-12T03:00:00.000Z'));
+    expect(at.toISOString()).toBe('2026-08-12T00:00:00.000Z');
   });
 
-  test('rejects a payload with no run timestamp', () => {
-    expect(() => pollJobDataSchema.parse({})).toThrow();
+  test('a retry minutes later lands on the same capturedAt', () => {
+    // This IS the idempotency property. `@@unique([postId, capturedAt])` only
+    // absorbs a retry if the retry computes the same key — so the value must
+    // not come from the instant the handler happens to run.
+    const first = resolveRunAt({}, new Date('2026-08-12T03:00:00.000Z'));
+    const retry = resolveRunAt({}, new Date('2026-08-12T03:04:12.000Z'));
+    expect(retry.toISOString()).toBe(first.toISOString());
+  });
+
+  test('honours an explicit runAt, for a manual backfill of one day', () => {
+    const at = resolveRunAt({ runAt: '2026-07-01T00:00:00.000Z' }, new Date());
+    expect(at.toISOString()).toBe('2026-07-01T00:00:00.000Z');
+  });
+
+  test('rejects a malformed runAt rather than silently using today', () => {
+    expect(() => resolveRunAt({ runAt: 'yesterday' }, new Date())).toThrow();
+  });
+
+  test('accepts an absent payload — the scheduler sends none', () => {
+    expect(() => pollJobDataSchema.parse({})).not.toThrow();
+    expect(resolveRunAt(undefined, new Date('2026-08-12T23:59:59Z')).toISOString()).toBe(
+      '2026-08-12T00:00:00.000Z',
+    );
+  });
+});
+
+describe('utcDayStart', () => {
+  test('is idempotent and ignores local time', () => {
+    const at = new Date('2026-08-12T23:30:00.000Z');
+    expect(utcDayStart(utcDayStart(at)).toISOString()).toBe('2026-08-12T00:00:00.000Z');
   });
 });
 
@@ -3482,23 +3513,45 @@ import { POLL_JOB } from './queues.ts';
 /**
  * What each scheduled job does.
  *
- * `runAt` rides on the payload rather than being read from the clock inside the
- * handler. That is load-bearing: every snapshot this run appends is stamped
- * with it, and `@@unique([postId, capturedAt])` is what makes an at-least-once
- * retry a no-op. A handler that called `new Date()` would give the retry a
- * different key and append a second observation of the same moment.
+ * **Where `runAt` comes from.** Every snapshot a run appends is stamped with
+ * it, and `@@unique([postId, capturedAt])` is what makes an at-least-once retry
+ * a no-op — so a retry has to compute the SAME `runAt` as the attempt it is
+ * retrying.
+ *
+ * It is therefore quantised to the UTC day rather than read raw from the clock,
+ * and deliberately NOT carried on the repeatable job's payload. BullMQ's
+ * `upsertJobScheduler` uses the template's `data` verbatim for every occurrence
+ * it materialises — the scheduled slot lands in `opts.prevMillis` and in the
+ * generated job id, never in `data` — so a timestamp baked into the template at
+ * registration would freeze, every snapshot after the first would collide on
+ * the unique key and be skipped, and the poller would report success while
+ * writing nothing.
+ *
+ * An explicit `runAt` is still honoured, for backfilling one specific day by
+ * hand.
  */
 
-export const pollJobDataSchema = z.object({ runAt: z.iso.datetime() });
+export const pollJobDataSchema = z.object({ runAt: z.iso.datetime().nullish() });
 export type PollJobData = z.infer<typeof pollJobDataSchema>;
 
-export function pollJobData(runAt: Date): PollJobData {
-  return { runAt: runAt.toISOString() };
+/** Midnight UTC of `moment`'s day. Idempotent. */
+export function utcDayStart(moment: Date): Date {
+  return new Date(Date.UTC(moment.getUTCFullYear(), moment.getUTCMonth(), moment.getUTCDate()));
+}
+
+/**
+ * The run's timestamp: the payload's if it carries one, else today's UTC day.
+ *
+ * A retry runs within minutes of its original against a 24-hour bucket, so the
+ * day boundary is never in play at the 03:00 UTC schedule.
+ */
+export function resolveRunAt(data: unknown, now: Date = new Date()): Date {
+  const { runAt } = pollJobDataSchema.parse(data ?? {});
+  return runAt ? new Date(runAt) : utcDayStart(now);
 }
 
 export async function runPoll(data: unknown): Promise<void> {
-  const { runAt } = pollJobDataSchema.parse(data);
-  const at = new Date(runAt);
+  const at = resolveRunAt(data);
   const seeds = await loadSeeds();
   const youtube = createYouTubeClient();
   const store = prismaStore();
@@ -3522,18 +3575,20 @@ export async function runPoll(data: unknown): Promise<void> {
     }
   }
 
-  console.log(`[poll] ${runAt} — ${seeds.length} channels, ${snapshots} snapshots appended`);
+  console.log(
+    `[poll] ${at.toISOString()} — ${seeds.length} channels, ${snapshots} snapshots appended`,
+  );
 }
 
 export async function runSweep(data: unknown): Promise<void> {
-  const { runAt } = pollJobDataSchema.parse(data);
-  const result = await sweepText({ now: new Date(runAt), store: prismaSweepStore() });
+  // The sweep's cutoff is a 30-day window, so the day bucket is precise enough
+  // and keeps a retry from nulling a different set than the attempt it retries.
+  const result = await sweepText({ now: resolveRunAt(data), store: prismaSweepStore() });
   console.log(`[sweep] nulled text on ${result.posts} posts, ${result.channels} channels`);
 }
 
 export async function runReadiness(data: unknown): Promise<void> {
-  const { runAt } = pollJobDataSchema.parse(data);
-  const now = new Date(runAt);
+  const now = resolveRunAt(data);
   const maturation = await readMaturation();
   const readiness = await buildReadiness({ now, maturation });
   const markdown = renderReadiness(readiness);
@@ -3566,7 +3621,7 @@ export async function handlePollJob(job: Job<unknown>): Promise<void> {
 - [ ] **Step 5: Run the test to verify it passes**
 
 Run: `bun test apps/poller/src/jobs.test.ts`
-Expected: PASS, 4 tests
+Expected: PASS, 8 tests
 
 - [ ] **Step 6: Write the entrypoint**
 
@@ -3577,7 +3632,7 @@ import { Queue, Worker } from 'bullmq';
 import { prismaService } from '@repo/db';
 import { QUEUE_PREFIX, createRedisConnection, redisUrl } from '@repo/queue';
 
-import { handlePollJob, pollJobData } from './jobs.ts';
+import { handlePollJob } from './jobs.ts';
 import { POLL_JOB, POLL_QUEUE, SCHEDULES } from './queues.ts';
 import { loadSeeds } from './seeds.ts';
 
@@ -3614,9 +3669,13 @@ async function schedule(): Promise<void> {
       { pattern, tz: 'UTC' },
       {
         name,
-        // BullMQ substitutes the scheduled time when it materialises the job,
-        // so every attempt of one occurrence carries the same `runAt`.
-        data: pollJobData(new Date(0)),
+        // No `runAt` here, deliberately. BullMQ reuses this template's `data`
+        // verbatim for every occurrence — the scheduled slot goes into
+        // `opts.prevMillis` and the job id, never into `data` — so a timestamp
+        // baked in at registration would freeze and every later snapshot would
+        // collide on `@@unique([postId, capturedAt])` and be skipped silently.
+        // `resolveRunAt` derives it per run instead. See `jobs.ts`.
+        data: {},
         opts: { attempts: 3, backoff: { type: 'exponential', delay: 60_000 } },
       },
     );
@@ -3735,10 +3794,13 @@ the same night.
 
 ## The two things most likely to be got wrong
 
-**Snapshots are appended, never updated, and `capturedAt` comes from the job.**
-`@@unique([postId, capturedAt])` is what makes an at-least-once retry a no-op. A
-handler that read the clock instead would give the retry a different key and
-append a second observation of the same moment.
+**Snapshots are appended, never updated, and `capturedAt` is the run's UTC day.**
+`@@unique([postId, capturedAt])` is what makes an at-least-once retry a no-op,
+and that only holds if the retry computes the same key — so `capturedAt` comes
+from `resolveRunAt`, not from the instant a handler happens to run. It is
+deliberately not carried on the repeatable job's payload either: BullMQ reuses a
+scheduler template's `data` verbatim, so a timestamp baked in there would freeze
+and every snapshot after the first would be silently skipped as a duplicate.
 
 **Exclusions are per-outcome, and almost none of them happen here.** Ingest
 applies the frame's definition only: public, dated, ≤30 s. The maturation floor,
