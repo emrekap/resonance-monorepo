@@ -7,7 +7,7 @@
 #   backend "s3" {
 #     bucket       = "resonance-terraform-state"
 #     key          = "deploy-api-worker/terraform.tfstate"
-#     region       = "eu-west-1"
+#     region       = "eu-south-2"
 #     use_lockfile = true
 #   }
 # }

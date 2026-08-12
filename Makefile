@@ -15,8 +15,11 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 TF_DIR := infra/deploy/terraform
-AWS_REGION ?= eu-west-1
+AWS_REGION ?= eu-south-2
 PROJECT ?= resonance
+IAM_USER ?= Local-aws-cli
+IAM_POLICY_NAME ?= terraform-deploy
+IAM_POLICY_FILE := $(TF_DIR)/local-aws-cli-policy.json
 
 # Lazily (recursively) expanded on purpose: these shell out to `terraform
 # output`, which needs a prior `make tf-apply`. Because `=` (not `:=`) only
@@ -30,7 +33,7 @@ ECR_WORKER       = $(shell cd $(TF_DIR) && terraform output -raw ecr_worker_repo
 LOG_GROUP_API    = $(shell cd $(TF_DIR) && terraform output -raw cloudwatch_log_group_api)
 LOG_GROUP_WORKER = $(shell cd $(TF_DIR) && terraform output -raw cloudwatch_log_group_worker)
 
-.PHONY: help tf-init tf-plan tf-apply \
+.PHONY: help tf-init tf-plan tf-apply iam-push-policy \
 	build-api build-worker push-api push-worker deploy-api deploy-worker \
 	start stop pause restart status ip logs-api logs-worker redis-check \
 	ml-pause ml-restart ml-status
@@ -38,6 +41,7 @@ LOG_GROUP_WORKER = $(shell cd $(TF_DIR) && terraform output -raw cloudwatch_log_
 help:
 	@echo "Terraform (one-time / rare):"
 	@echo "  make tf-init tf-plan tf-apply"
+	@echo "  make iam-push-policy             sync $(IAM_POLICY_FILE) to the $(IAM_USER) inline policy"
 	@echo ""
 	@echo "Images:"
 	@echo "  make build-api build-worker      docker build only"
@@ -71,8 +75,47 @@ tf-plan:
 tf-apply:
 	cd $(TF_DIR) && terraform apply
 
+# Local-aws-cli has no iam:PutUserPolicy on itself (deliberately — it's a
+# deploy credential, not an IAM admin one), so this needs to run under a
+# profile/role that can manage IAM, e.g.:
+#   AWS_PROFILE=admin-profile make iam-push-policy
+#
+# A customer-managed policy, not `put-user-policy` — inline user policies cap
+# at 2048 bytes, which this policy outgrew. Managed policies allow 6144 and
+# are versioned, so an update = new version + prune old ones (max 5 kept).
+iam-push-policy:
+	@aws iam delete-user-policy --user-name $(IAM_USER) --policy-name $(IAM_POLICY_NAME) 2>/dev/null; \
+	arn=$$(aws iam list-policies --scope Local --query "Policies[?PolicyName=='$(IAM_POLICY_NAME)'].Arn | [0]" --output text); \
+	if [ -z "$$arn" ] || [ "$$arn" = "None" ]; then \
+		arn=$$(aws iam create-policy --policy-name $(IAM_POLICY_NAME) \
+			--policy-document file://$(IAM_POLICY_FILE) --query 'Policy.Arn' --output text); \
+		echo "Created managed policy $$arn"; \
+	else \
+		for v in $$(aws iam list-policy-versions --policy-arn "$$arn" \
+			--query 'Versions[?IsDefaultVersion==`false`].VersionId' --output text); do \
+			aws iam delete-policy-version --policy-arn "$$arn" --version-id "$$v"; \
+		done; \
+		aws iam create-policy-version --policy-arn "$$arn" --set-as-default \
+			--policy-document file://$(IAM_POLICY_FILE); \
+		echo "Updated managed policy $$arn"; \
+	fi; \
+	aws iam attach-user-policy --user-name $(IAM_USER) --policy-arn "$$arn"
+	@echo "Synced $(IAM_POLICY_FILE) -> managed policy '$(IAM_POLICY_NAME)', attached to $(IAM_USER)."
+
 # --- Images ----------------------------------------------------------------
 
+# No --platform flag, deliberately. Both task definitions in ecs.tf pin
+# runtime_platform.cpu_architecture = ARM64 (Graviton), which matches the arm64
+# these images build as natively on an Apple Silicon host — so nothing is
+# emulated and the arch is identical on both sides of the push. Beyond build
+# speed that buys two things: Graviton Fargate is ~20% cheaper than X86_64, and
+# no cross-arch step remains where `bun install` could resolve the wrong
+# arch-gated binary (bullmq -> msgpackr -> @msgpackr-extract/*-linux-<arch>).
+#
+# If --platform ever comes back, ecs.tf must change in the same commit, and the
+# new image must be pushed BEFORE `terraform apply`: a task definition whose
+# arch disagrees with its image dies on "exec format error" before any app code
+# runs, which is silent in ECS terms — the task just exits 255 in a loop.
 build-api:
 	docker build -f infra/deploy/api/Dockerfile -t $(PROJECT)-api:latest .
 
@@ -80,13 +123,13 @@ build-worker:
 	docker build -f infra/deploy/worker/Dockerfile -t $(PROJECT)-worker:latest .
 
 push-api: build-api
-	registry="$${ECR_API%%/*}"; \
+	registry="$(ECR_API)"; registry="$${registry%%/*}"; \
 	aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin "$$registry"
 	docker tag $(PROJECT)-api:latest $(ECR_API):latest
 	docker push $(ECR_API):latest
 
 push-worker: build-worker
-	registry="$${ECR_WORKER%%/*}"; \
+	registry="$(ECR_WORKER)"; registry="$${registry%%/*}"; \
 	aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin "$$registry"
 	docker tag $(PROJECT)-worker:latest $(ECR_WORKER):latest
 	docker push $(ECR_WORKER):latest

@@ -19,7 +19,21 @@ infra/deploy/
 ## One-time setup
 
 1. `aws configure` (or an equivalent credentials source) — needs permissions for ECS, ECR, IAM, SSM,
-   CloudWatch Logs, and EC2 (security groups + reading the default VPC).
+   CloudWatch Logs, and EC2 (security groups + reading the default VPC). The exact policy this
+   project needs is `infra/deploy/terraform/local-aws-cli-policy.json`; sync it to the IAM user with
+   `make iam-push-policy` (see the optional admin-profile step below).
+   - **Optional:** `make iam-push-policy` writes an IAM policy, which the deploy user itself is
+     deliberately *not* permitted to do to itself (no `iam:PutUserPolicy` on its own ARN — that would
+     be a self-privilege-escalation path). To use that target, configure a second, admin-capable
+     profile once:
+
+     ```bash
+     aws configure --profile admin-profile   # access key from an IAM user with, e.g., AdministratorAccess
+     aws sts get-caller-identity --profile admin-profile   # confirm it's the admin user, not the deploy one
+     AWS_PROFILE=admin-profile make iam-push-policy
+     ```
+
+     Without this, apply `local-aws-cli-policy.json` by hand in the IAM console instead.
 2. `cp infra/deploy/terraform/terraform.tfvars.example infra/deploy/terraform/terraform.tfvars` and
    fill in real values (never commit this file — it's gitignored).
 3. `make tf-init && make tf-plan` to review, then `make tf-apply` to provision the cluster, ECR

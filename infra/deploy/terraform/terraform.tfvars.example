@@ -3,7 +3,7 @@
 # apps/api/.env.example / apps/worker/.env.example; see those files for what
 # each value is and how to generate it.
 
-aws_region  = "eu-west-1"
+aws_region  = "eu-south-2"
 project     = "resonance"
 environment = "demo"
 
@@ -21,7 +21,4 @@ google_client_id           = "<client-id>.apps.googleusercontent.com"
 google_client_secret       = "<client-secret>"
 oauth_state_secret         = "<openssl rand -base64 32>"
 token_encryption_key       = "<openssl rand -base64 32, must decode to 32 bytes>"
-
-# Optional. Leave unset (or "") to run without insight recommendations —
-# analyses still score (apps/worker/.env.example).
 anthropic_api_key = ""

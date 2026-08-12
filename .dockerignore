@@ -24,6 +24,24 @@ apps/mobile/.expo
 apps/mobile/ios
 apps/mobile/android
 
+# Terraform. `.terraform/` is the extracted AWS provider — ~650MB, i.e. it was
+# by far the largest thing in this context and the reason `turbo prune` looked
+# slow (the COPY . . before it, not the prune). The state files matter for a
+# second reason: Terraform writes SSM SecureString values to state in
+# PLAINTEXT, so tfstate/tfvars carry the Redis password, Supabase keys and
+# ANTHROPIC_API_KEY. Nothing here is needed to build a Bun image.
+# The whole directory, rather than globs per file type: a Bun image needs
+# nothing from it, and one directory line can't be defeated by the fact that
+# `*.tfstate` in a .dockerignore only matches at the context ROOT (same reason
+# node_modules is listed twice above).
+infra/deploy/terraform
+
+# Defense in depth, for Terraform state that ever lands outside that directory.
+**/.terraform
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfvars
+
 .env
 .env.*
 !.env.example

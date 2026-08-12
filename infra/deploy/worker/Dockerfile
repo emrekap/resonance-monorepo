@@ -10,6 +10,9 @@
 # BYPASSRLS, so this credential never sits behind a listening port).
 
 # ---- pruner ------------------------------------------------------------------
+# Every stage on one arch (arm64 -> ARM64 Fargate), no --platform anywhere —
+# see infra/deploy/api/Dockerfile's pruner comment for why keeping installer and
+# runtime on the same architecture is load-bearing rather than incidental.
 FROM oven/bun:1.3.14-slim AS pruner
 WORKDIR /repo
 COPY . .

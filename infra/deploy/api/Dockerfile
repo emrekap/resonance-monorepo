@@ -15,6 +15,18 @@
 # monorepo Docker builds, and it sidesteps the Bun workspace-symlink hazard by
 # construction — there's nothing dangling because nothing unneeded was ever
 # copied in.
+# No --platform on any stage, and no $BUILDPLATFORM either: `make build-api`
+# passes no --platform, and ecs.tf runs these on ARM64 (Graviton) Fargate, so
+# build host, every intermediate stage, and the runtime target are all the same
+# arm64 architecture. Nothing is emulated and nothing is cross-compiled.
+#
+# That single-arch property is load-bearing, not incidental. node_modules is
+# arch-specific output — `bun install` resolves arch-gated optional deps for
+# whichever arch it runs on, and this app has one in its runtime closure:
+# bullmq -> msgpackr -> msgpackr-extract -> @msgpackr-extract/*-linux-<arch>.
+# If installer and runtime ever disagree on arch, the wrong binary ships and
+# msgpackr silently falls back to pure JS — a performance regression with no
+# error to notice. Keep all stages on one arch.
 FROM oven/bun:1.3.14-slim AS pruner
 WORKDIR /repo
 COPY . .

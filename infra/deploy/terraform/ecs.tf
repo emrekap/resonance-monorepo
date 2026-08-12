@@ -32,6 +32,22 @@ resource "aws_ecs_task_definition" "api" {
   memory                   = var.api_memory
   execution_role_arn       = aws_iam_role.execution.arn
 
+  # Must be stated explicitly. Omitting this block does not mean "match the
+  # image" — it means X86_64, and an arm64 image then dies on "exec format
+  # error" with exit 255 before any app code runs. ARM64 (Graviton) is chosen
+  # over X86_64 because it is ~20% cheaper for identical vCPU/GB, and because
+  # the images are built on an Apple Silicon host, so building for it needs no
+  # QEMU emulation and no cross-arch `bun install` (see the Dockerfile's pruner
+  # comment on why arch has to be uniform there).
+  #
+  # Coupled to infra/deploy/api/Dockerfile + the Makefile's build-api: changing
+  # any one of the three requires changing all three, and the matching image
+  # must be pushed BEFORE this is applied.
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "ARM64"
+  }
+
   container_definitions = jsonencode([
     {
       name      = "api"
@@ -115,6 +131,15 @@ resource "aws_ecs_task_definition" "worker" {
   cpu                      = var.worker_cpu
   memory                   = var.worker_memory
   execution_role_arn       = aws_iam_role.execution.arn
+
+  # ARM64 for the same reasons as the api task definition above — see its
+  # runtime_platform comment. Both services must stay on the same architecture:
+  # `make push-api`/`push-worker` build from one host, so a split would mean
+  # emulating one of the two images.
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "ARM64"
+  }
 
   # No ephemeral_storage block: this task writes no local files, so the
   # default 20 GiB Fargate includes for free is untouched — declaring the
