@@ -14,12 +14,13 @@ score can be ranked against real outcomes. Instagram and TikTok are explicitly *
 Produce a number of this shape:
 
 > On N Shorts across M creators, the resonance composite ranks a creator's own posts against their
-> realised engagement rate at Spearman ρ = X.
+> realised reach at Spearman ρ = X.
 
-Two words in that sentence are load-bearing. **"A creator's own"** — the ranking is within-creator,
-because across creators, engagement is dominated by audience size, and a correlation that does not
+Two phrases in that sentence are load-bearing. **"A creator's own"** — the ranking is within-creator,
+because across creators, reach is dominated by audience size, and a correlation that does not
 condition on the creator is mostly a restatement of subscriber count. **"Realised"** — the metric is
-read after it has matured, not at discovery time.
+read at a fixed post age after it has matured (§1b), not at discovery time and not at a shared
+calendar date.
 
 ### 1a. This is NOT the pre-registered experiment
 
@@ -41,24 +42,56 @@ and the prereg becomes decoration. So the separation is structural, not editoria
 **Not sayable:** "validated per our pre-registration." The first survives technical diligence. The
 second does not, and it is the kind of overclaim that costs more than the number is worth.
 
-### 1b. The label
+### 1b. The labels
 
-```
-engagement_rate = (likes + comments) / views
-```
+Two outcomes, both computed on every run, with the primary **fixed here, in writing, before any data
+exists**:
 
-Ranked within creator. A ratio rather than raw counts, because within a channel the dominant
-confound is **age**: an older Short has had longer to accumulate. A ratio cancels most of that,
-since numerator and denominator accumulate together. Two further controls, because "most" is not
-"all":
+|               | Outcome                                              | Ranked         |
+| ------------- | ---------------------------------------------------- | -------------- |
+| **Primary**   | `views_at_Nd`                                        | within creator |
+| **Secondary** | `engagement_rate = (likes + comments) / views_at_Nd` | within creator |
 
-- `days_since_publish` enters the B1 metadata rung as an explicit covariate.
-- Posts below a **maturation floor** are excluded outright (§5b), with the floor itself measured
-  rather than assumed (§5c).
+`N` is the maturation parameter of §5c. Reporting two outcomes is two chances to declare success
+unless the primary is committed in advance — so it is committed above, and it does not move. If the
+two disagree, that is a finding to report, not a menu to choose from.
 
-`likes` is nullable in the wild: creators can hide like counts. Such posts are excluded and the
-exclusion is **counted and reported**, because hiding likes is not independent of how a post
-performed, so silently dropping them would be a selection effect rather than missing data.
+**Views is treated as content-driven rather than divided out.** The earlier draft used engagement
+rate alone, treating reach as a nuisance parameter. That is defensible but concedes too much: if
+content quality influences what the recommender distributes, then views is itself partly an outcome
+of content, and dividing it away discards signal the product exists to predict. Creators also care
+about views directly, which makes the primary outcome product-legible.
+
+**What makes this measurable at all is fixed-age measurement.** Because the poller reads every post
+on a daily cadence (§5c), each post's view count can be taken at the same **age** rather than at the
+same calendar moment. Age is the dominant confound in any crawled corpus, and this removes it _by
+construction_ rather than by normalising it away. **A one-shot crawl cannot do this at any price** —
+it is the single strongest argument for the poller shape over a crawler, and it is why the primary
+label is available here and would not have been otherwise.
+
+Three consequences, each of which would quietly invalidate the result if skipped:
+
+- **Inclusion becomes per-outcome (§5b).** A view-count floor applied to a views label is selection
+  on the outcome variable — the exact flaw that disqualifies Instagram's `top_media` in §2. The
+  primary therefore takes **no view-based exclusion**. The secondary keeps a denominator floor for
+  ratio stability, applied only when computing it, counted and reported.
+- **Within-creator normalisation does not remove channel growth.** A growing channel gives its later
+  posts more baseline reach — a time trend _inside_ each creator that within-creator z-scoring
+  leaves untouched. The label is therefore **detrended against publish order within creator**, and
+  `days_since_publish` also enters the B1 rung as an explicit covariate.
+- **The label carries algorithmic distribution, not only content.** Thumbnail, title, posting time,
+  channel momentum and external traffic all move views. This is stated in the report rather than
+  hedged: the claim is that content predicts realised reach, not that content is its only cause.
+
+Because the headline metric is Spearman ρ, which is rank-based, a log transform changes **nothing**
+about the primary number — heavy tails and viral outliers are already handled by ranking. The
+transform matters only for fitting the B0–B4 ladder, where `log(views)` is used. Recorded here so it
+is not later "fixed" in one place and not the other.
+
+`likes` is nullable in the wild: creators can hide like counts. Under the per-outcome rule those
+posts now drop from the **secondary only** — so the primary's N is strictly larger. The exclusion is
+**counted and reported**, because hiding likes is not independent of how a post performed, and
+silently dropping them would be a selection effect rather than missing data.
 
 ---
 
@@ -254,8 +287,21 @@ the **≤30 s rule is stricter than the Shorts boundary anyway**. Filtering on
 [`validation-experiment-spec.md`](../../validation-experiment-spec.md) §3's requirement not to mix
 short-form with long-form.
 
-Excluded, each with a counted reason: duration > 30 s; `like_count` hidden; view count below a floor
-where the ratio is noise; age below the maturation floor.
+**Exclusions are per-outcome**, because the primary label is now views (§1b) and a view-count filter
+applied to a views label is selection on the outcome variable — the flaw that disqualifies
+Instagram's `top_media` in §2. Applying one filter set to both outcomes would import that flaw into
+our own method section.
+
+| Exclusion               | Primary (`views_at_Nd`) | Secondary (engagement rate) |
+| ----------------------- | ----------------------- | --------------------------- |
+| `duration > 30 s`       | ✓                       | ✓                           |
+| age below `N` days      | ✓                       | ✓                           |
+| `like_count` hidden     | —                       | ✓                           |
+| views below denom floor | —                       | ✓                           |
+
+Every exclusion is counted by reason and reported. The two rows that apply only to the secondary are
+why the primary analysis runs on strictly more posts than the secondary — the report states both Ns
+rather than one.
 
 ### 5c. Cadence — daily, then weekly
 
@@ -263,11 +309,32 @@ Every poll appends a `corpus.metric_snapshots` row; nothing is ever updated in p
 first 14 days** after a post is first seen, **weekly** thereafter.
 
 This is the design's least obvious payoff. A single-shot crawl forces you to _assume_ when
-engagement has matured; a time series lets you **measure** it — the maturation floor in §1b becomes
-an observed property of the corpus (the age at which the rate stops moving) rather than a guess
-defended in prose. It also yields velocity features for free, and satisfies YouTube's "keep stored
-data consistent with live YouTube" obligation as a side effect of doing what the statistics already
-required.
+engagement has matured; a time series lets you **measure** it. It also yields velocity features for
+free, enables the fixed-age measurement the primary label depends on (§1b), and satisfies YouTube's
+"keep stored data consistent with live YouTube" obligation as a side effect of doing what the
+statistics already required.
+
+#### The maturation parameter `N`, in two phases
+
+`N` is **one parameter serving two jobs** — the age at which the label is read, and the age below
+which a post is excluded. They are deliberately not separate knobs: if the measurement age and the
+inclusion floor could drift apart, the corpus would contain posts whose label was read before they
+qualified, and nothing would flag it.
+
+| Phase | When                                  | Source of `N`                                  |
+| ----- | ------------------------------------- | ---------------------------------------------- |
+| 1     | days 1–28, before enough series exist | hard-coded fallback, **`N = 14`**              |
+| 2     | day 29+                               | computed by SQL over `corpus.metric_snapshots` |
+
+Phase 2's query finds the age at which within-post view growth flattens — the smallest `N` where the
+median post's day-over-day gain falls below a fixed threshold — and that becomes the parameter. The
+fallback is not a placeholder to be deleted; it stays as the value used whenever the query has
+insufficient data, so a fresh environment is never blocked on four weeks of history.
+
+**The snapshot manifest records `N` and which phase produced it.** Without that, two runs at
+different floors are silently incomparable — the label itself would have changed meaning between
+them. This makes a shifted parameter a visible difference in the artifact rather than an
+unexplainable movement in ρ.
 
 ### 5d. Sampling frame
 
@@ -353,10 +420,20 @@ It reads the corpus schema and emits the existing snapshot format — `posts.par
 the B0–B4 ladder, bootstrap, negative controls, verdict, report) then runs **unmodified**, already
 tested against worlds with known answers.
 
-Mapping to `REQUIRED_COLUMNS`: `creator_id` ← `corpus.channels.id`; `label` ← §1b's engagement rate
-(**not** `averageViewPercentage` — §1a); `view_count` ← latest matured snapshot;
-`follower_count` ← `subscriber_count`; `duration_sec`, `published_at`, `published_hour`,
-`published_dow`, `hashtag_count` ← `corpus.posts`.
+Mapping to `REQUIRED_COLUMNS`: `creator_id` ← `corpus.channels.id`; `label` ← §1b's **primary**
+outcome, `views_at_Nd`, detrended within creator (**not** `averageViewPercentage` — §1a);
+`view_count` ← the same fixed-age snapshot; `follower_count` ← `subscriber_count`; `duration_sec`,
+`published_at`, `published_hour`, `published_dow`, `hashtag_count` ← `corpus.posts`.
+
+`label` and `view_count` now derive from the same measurement, which makes
+[`snapshot.py`](../../../research/eval/snapshot.py)'s existing warning load-bearing rather than
+incidental: `view_count` is deliberately absent from `METADATA_COLUMNS` because using it as a
+feature would be a post-publication leak. Under the primary outcome it would not merely leak — it
+would **be the label**, and B1 would score near-perfectly for no reason. The extract asserts the
+exclusion rather than trusting the upstream comment to be re-read.
+
+The secondary outcome (engagement rate) is emitted as a separate snapshot with its own exclusion set
+(§5b), so the two are never mixed inside one parquet.
 
 `format` is required by the contract but is **constant** here — the corpus is Shorts-only by
 construction (§5b). It is emitted for schema conformance and must be **excluded from the B1 feature
@@ -370,8 +447,8 @@ it a secondary exploratory analysis.
 
 They are distinct and both worth running:
 
-- **Zero-shot (answers the original question).** Correlate the **shipped composite** against
-  engagement rate, within creator. Nothing is fitted, so nothing can be overfitted — it tests the
+- **Zero-shot (answers the original question).** Correlate the **shipped composite** against the
+  primary outcome, within creator. Nothing is fitted, so nothing can be overfitted — it tests the
   product exactly as it ships. This is the investor-facing number.
 - **The ladder (answers the research question).** Fit B0–B4 on TRIBE features and ask whether neuro
   beats metadata and text baselines.
@@ -395,6 +472,21 @@ calls in the suite**, against recorded API fixtures. Specifically:
   to drift, and the one that silently invalidates everything downstream if it does;
 - a shared fixture across the `[corpus]` / `[corpus-results]` contract, mirroring the existing
   api↔ml drift test.
+
+Four more exist because the §12 decisions created ways to be wrong that prose alone cannot prevent:
+
+- **The primary snapshot carries no view-based exclusion** (§5b). This is the guard against
+  selecting on the outcome variable, and it is invisible in the output — a snapshot built the wrong
+  way looks entirely normal and simply reports a better ρ. Asserted directly against the exclusion
+  tallies, not inferred from row counts.
+- **`view_count` never reaches the feature matrix** when it is also the label (§8). Under the primary
+  outcome this is not a subtle leak but an identity, and B1 scoring suspiciously well is the only
+  symptom.
+- **Fixed-age measurement reads the snapshot at age `N`**, not the latest one — including for a post
+  whose polling was interrupted, where the nearest available snapshot must be resolved explicitly
+  rather than silently falling back to "most recent".
+- **The two-phase parameter** falls back to `N = 14` when the phase-2 query has insufficient data,
+  and the manifest records which phase applied.
 
 ---
 
@@ -423,16 +515,29 @@ assumed prohibitive and used to justify a smaller corpus than the statistics nee
 
 ---
 
-## 12. Open questions
+## 12. Resolved questions
 
-1. **The maturation floor** is measured rather than assumed (§5c), so it is unknown until ~4 weeks of
-   polling exist. The extract must therefore be parameterised by it, not hard-coded.
-2. **Whether the CC-BY population is large enough** to be viable (§7) — answered by SQL after two
-   weeks, not by argument now.
-3. **Whether `views` should be modelled** rather than divided out. The chosen ratio treats reach as
-   a nuisance; an alternative treats view count as itself partly content-driven and worth predicting.
-   Settling it needs the corpus to exist first.
-4. **TODO #1 in `CLAUDE.md` still gates every axis number.** The atlas has never been checked against
-   real anatomy, and a transposed vertex order still averages to plausible values on all five axes.
-   That check is upstream of this corpus meaning anything, and running one high-motion clip through
-   the pipeline satisfies it.
+All four were settled on 2026-08-12, before implementation. Recorded here rather than folded
+silently into the body, so a later reader can see what was decided in advance of any data — which is
+the only thing that makes a pre-commitment worth anything.
+
+1. **The maturation floor → two-phase parameter (§5c).** Phase 1 (days 1–28) uses a hard-coded
+   fallback of `N = 14`; phase 2 (day 29+) computes `N` by SQL over `corpus.metric_snapshots`. One
+   parameter serves as both the measurement age and the inclusion floor, and the manifest records
+   its value and phase so runs at different floors are visibly, not silently, incomparable.
+
+2. **CC-BY viability → self-answering, no separate exercise (§7).** `status.license` is captured on
+   the call already being made, and the poller emits a **weekly corpus-readiness report**: posts per
+   channel, per-channel CC-BY counts under 30 s, exclusion tallies by reason, and how many channels
+   currently clear the ≥20-post floor. The §7 decision therefore arrives as a standing number
+   somebody is already looking at, rather than a question that has to be remembered.
+
+3. **Views → modelled as content-driven, not divided out (§1b).** `views_at_Nd` becomes the
+   **primary** outcome and engagement rate is demoted to **secondary**, both computed every run with
+   the primary fixed in writing before any data exists. This forced three changes that the ratio
+   label did not need: per-outcome exclusions (§5b), within-creator detrending against publish order,
+   and an explicit statement that the label carries algorithmic distribution as well as content.
+
+4. **Atlas check (`CLAUDE.md` TODO #1) → acknowledged, owner-deferred.** Deliberately not scheduled
+   by this design. It remains upstream of every axis number the corpus produces, so it is recorded
+   here as a known interpretive caveat rather than an open task on this work.
