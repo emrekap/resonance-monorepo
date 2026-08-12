@@ -268,8 +268,20 @@ it has produced came from a world whose ground truth it generated itself.
   `docs/validation-experiment-spec.md` §11a: YouTube gives no source video files, so the corpus
   needs a paid or design-partner motion, not an ask.
 
-**Also queued:** deploy images for `apps/worker` + the ml worker; a production Redis decision
-(shared instance, `noeviction`); Instagram/TikTok `PlatformProvider`s; Facebook/TikTok login
+**`apps/api` + `apps/worker` deploy (code-complete, unverified against a real AWS account):**
+`infra/deploy/{api,worker}/Dockerfile` (Bun multi-stage, `turbo prune --docker` — both build and run
+locally against real Redis + Supabase credentials) and `infra/deploy/terraform/` (ECS Fargate, no
+ALB/NAT, SSM-parameter secrets) target AWS, provisioned on demand for investor demos rather than
+continuously — see `docs/superpowers/specs/2026-08-09-deploy-api-worker-design.md`. Production Redis
+is a free Render Key Value instance shared by all three processes; `noeviction` is required and is
+**not** stated as that plan's default, so `make redis-check` must confirm it before the first real
+job crosses it. The root `Makefile` drives the lifecycle (`make start` / `stop` / `deploy-api` / …).
+**Nothing here has run `terraform apply` against a real account yet** — that, plus the Google OAuth
+redirect URI (a Fargate task's public IP is not stable without an added Route 53 record, §3/§10 of
+the spec) and the ECS `stopTimeout` value, are the open items before the first real demo.
+
+**Also queued:** the ml worker's own deploy image (Hugging Face Space, already working — a separate,
+smaller decision, see the spec's §9); Instagram/TikTok `PlatformProvider`s; Facebook/TikTok login
 providers; scaffold `apps/web`.
 
 **Not** `@repo/ml-client` — the queue replaced the HTTP seam it was scaffolded for, and it only

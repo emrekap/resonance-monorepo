@@ -1,0 +1,27 @@
+# Copy to terraform.tfvars (gitignored — never commit real credentials) and
+# fill in real values. Every one of these mirrors an entry in
+# apps/api/.env.example / apps/worker/.env.example; see those files for what
+# each value is and how to generate it.
+
+aws_region  = "eu-west-1"
+project     = "resonance"
+environment = "demo"
+
+# Set once you've run `make ip` after the first `make start` — chicken/egg on
+# the very first apply, so use a placeholder and update it once real (design
+# spec §6, §10).
+api_public_url = "http://localhost:3000"
+
+redis_url                 = "rediss://default:<password>@<host>.render.com:6379"
+supabase_url               = "https://<ref>.supabase.co"
+supabase_publishable_key   = "sb_publishable_..."
+app_user_database_url      = "postgresql://app_user.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres?sslmode=require&pgbouncer=true"
+app_service_database_url   = "postgresql://app_service.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres?sslmode=require&pgbouncer=true"
+google_client_id           = "<client-id>.apps.googleusercontent.com"
+google_client_secret       = "<client-secret>"
+oauth_state_secret         = "<openssl rand -base64 32>"
+token_encryption_key       = "<openssl rand -base64 32, must decode to 32 bytes>"
+
+# Optional. Leave unset (or "") to run without insight recommendations —
+# analyses still score (apps/worker/.env.example).
+anthropic_api_key = ""

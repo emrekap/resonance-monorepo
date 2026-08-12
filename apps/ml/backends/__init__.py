@@ -33,8 +33,10 @@ DEFAULT_BACKEND = "tribe"
 class Backend(tp.Protocol):
     """What `engine.py` needs from whatever is producing predictions."""
 
-    #: Reported to `apps/worker` and stored in `inference_runs.device`.
-    device: str
+    @property
+    def device(self) -> str:
+        """Reported to `apps/worker` and stored in `inference_runs.device`."""
+        ...
 
     def load(self) -> None:
         """Bring the model into memory. Idempotent, blocking, possibly slow."""
@@ -46,6 +48,7 @@ class Backend(tp.Protocol):
 
     def run(self, modality: str, path: str) -> tuple[np.ndarray, list]:
         """`[n_segments x n_vertices]` predictions plus the aligned segments."""
+        ...
 
 
 def selected_name() -> str:

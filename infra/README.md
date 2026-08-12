@@ -63,12 +63,16 @@ The `external` bucket beside it is **not a leftover placeholder**: it is the esc
 that is already URL-addressable (`POST /analyze { mediaUrl }`), which skips registration, upload and
 the signed-URL mint entirely. Both are deliberate.
 
-## Still to build
+## Production deploy — `deploy/`
 
-- **Dockerfiles / compose** for each deployable (`apps/api` + `apps/worker` on cheap CPU, `apps/ml`
-  on GPU). `apps/ml` has an image already — reuse it, overriding `CMD` to `python worker.py`.
-- **A production Redis decision.** All three processes must share one instance, and it must be
-  configured `noeviction` (see below — the requirement is not local-only). The `apps/ml` README's
-  Space section is currently the only place this is written down, and it is not an ml-specific
-  concern.
-- Deploy targets, env, and CI.
+`apps/api` and `apps/worker` deploy to AWS ECS Fargate, provisioned with Terraform; `apps/ml` keeps
+its existing Hugging Face Space deploy. See [`deploy/README.md`](deploy/README.md) for the runbook
+and `docs/superpowers/specs/2026-08-09-deploy-api-worker-design.md` for the design rationale — in
+short, this app runs **on demand** (investor demos) rather than continuously, so the whole design is
+built around `desired_count` toggling to 0 between demos at near-zero idle cost. The root
+[`Makefile`](../Makefile) drives the lifecycle (`make start` / `make stop` / `make deploy-api` / …).
+
+Production Redis is a **free Render Key Value instance**, shared by all three processes
+(`apps/api`, `apps/worker`, `apps/ml`). `noeviction` is required (see above — not a local-only
+concern) and is **not** documented as Render's default for that plan, so it must be verified per
+instance, not assumed — `make redis-check` does this on demand.

@@ -1,0 +1,29 @@
+# Keeps the build context small for infra/deploy/*/Dockerfile, which COPY the
+# whole repo into the pruner stage (see those Dockerfiles' comments). None of
+# this is needed to compute a turbo prune graph or to run apps/api / apps/worker.
+node_modules
+**/node_modules
+**/dist
+**/.turbo
+.git
+.superpowers
+.claude
+.vscode
+*.tsbuildinfo
+
+# Python islands — never touched by the Bun images.
+apps/ml/.venv
+apps/ml/cache
+apps/ml/**/__pycache__
+research/.venv
+research/**/__pycache__
+
+# Mobile/native build output — not part of any workspace apps/api or
+# apps/worker depends on, but excluded explicitly since it's large.
+apps/mobile/.expo
+apps/mobile/ios
+apps/mobile/android
+
+.env
+.env.*
+!.env.example

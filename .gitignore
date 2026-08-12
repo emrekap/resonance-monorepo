@@ -37,4 +37,12 @@ yarn-debug.log*
 .vscode/*
 !.vscode/extensions.json
 
+# Terraform (infra/deploy/terraform) — .terraform.lock.hcl IS committed (pins
+# provider versions), everything else here is local state or real credentials.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+
 # NOTE: commit the Bun lockfile (bun.lock / bun.lockb) — do not ignore it.
