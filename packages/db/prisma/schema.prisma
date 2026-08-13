@@ -27,7 +27,7 @@ generator client {
 // `auth` back into this list). See the security migration.
 datasource db {
   provider = "postgresql"
-  schemas  = ["public"]
+  schemas  = ["public", "corpus"]
 }
 
 // ─── Identity ────────────────────────────────────────────────────────────────
@@ -787,4 +787,188 @@ enum DeletionStatus {
 
   @@map("deletion_status_enum")
   @@schema("public")
+}
+
+// ─── Corpus (research) ───────────────────────────────────────────────────────
+// A SEPARATE SCHEMA, not a system workspace. Two reasons, and the second is the
+// stronger one (spec §3a/§3b):
+//
+//   * fitting crawled channels into `public.channels` required making
+//     `connectedAccountId` nullable and widening a unique key on a live table —
+//     relaxing customer-table invariants to accommodate a research pipeline.
+//   * the two datasets are governed by different regimes (YouTube API ToS vs
+//     user consent) with different retention clocks and different deletion
+//     triggers. Sharing a table means every sweep must discriminate correctly,
+//     forever; a wrong predicate is either a bug or a compliance incident.
+//
+// These tables carry NO policies. RLS is enabled and forced with zero policies,
+// which denies every role except the BYPASSRLS service credential — strictly
+// stricter than a workspace policy, and it fails closed. See the
+// `corpus_security` migration.
+
+/// A publicly observed channel. Seeded by hand from `apps/poller/seeds/channels.yaml`
+/// — never discovered, because `search.list` costs 100 quota units against
+/// `playlistItems.list`'s 1, and a hand-curated frame is the answer that survives
+/// diligence (spec §5d).
+model CorpusChannel {
+  id                String    @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  platformChannelId String    @unique @map("platform_channel_id")
+  /// 30-day text tier — nulled by the sweep unless the poller refreshed it.
+  title             String?
+  niche             String?
+  /// Why this channel is in the frame. Copied from the seed file so the frame's
+  /// composition is auditable from the database alone.
+  rationale         String?
+  uploadsPlaylistId String?   @map("uploads_playlist_id")
+  subscriberCount   BigInt?   @map("subscriber_count")
+  lastPolledAt      DateTime? @map("last_polled_at") @db.Timestamptz(6)
+  textRefreshedAt   DateTime? @map("text_refreshed_at") @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  posts    CorpusPost[]
+  pollRuns CorpusPollRun[]
+
+  @@index([textRefreshedAt])
+  @@map("channels")
+  @@schema("corpus")
+}
+
+/// One Short. Only `duration_sec <= 30` rows are stored — the frame's definition,
+/// applied at ingest. Every OTHER exclusion (age below N, hidden likes, the
+/// secondary's denominator floor) is applied at extract time, per-outcome, and
+/// must NOT be applied here: a post below the maturation floor today is the
+/// post whose label matures next week.
+model CorpusPost {
+  id              String    @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  channelId       String    @map("channel_id") @db.Uuid
+  platformVideoId String    @unique @map("platform_video_id")
+  publishedAt     DateTime  @map("published_at") @db.Timestamptz(6)
+  durationSec     Float     @map("duration_sec")
+  /// 30-day text tier.
+  title           String?
+  description     String?
+  tags            String[]
+  /// `status.license` — `creativeCommon` or `youtube`. Captured on the
+  /// `videos.list` call already being made, at no extra quota, so §7's
+  /// "do enough channels have ≥20 CC-BY Shorts?" is a SQL query rather than a
+  /// separate research exercise.
+  license         String?
+  firstSeenAt     DateTime  @default(now()) @map("first_seen_at") @db.Timestamptz(6)
+  textRefreshedAt DateTime? @map("text_refreshed_at") @db.Timestamptz(6)
+
+  channel   CorpusChannel          @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  snapshots CorpusMetricSnapshot[]
+  clip      CorpusClip?
+  scores    CorpusScore[]
+
+  @@index([channelId, publishedAt(sort: Desc)])
+  @@index([textRefreshedAt])
+  @@index([license])
+  @@map("posts")
+  @@schema("corpus")
+}
+
+/// The time series. One row per poll, NEVER an update — a single-shot crawl
+/// forces you to assume when engagement matured; this lets you measure it, and
+/// it is what makes fixed-age measurement possible at all (spec §1b/§5c).
+///
+/// `capturedAt` is the poll RUN's timestamp, not `now()`, so a retried job
+/// collides with its own earlier write on `@@unique([postId, capturedAt])`
+/// instead of appending a duplicate. That is what makes the append idempotent
+/// under at-least-once delivery.
+model CorpusMetricSnapshot {
+  id         BigInt   @id @default(autoincrement())
+  postId     String   @map("post_id") @db.Uuid
+  capturedAt DateTime @map("captured_at") @db.Timestamptz(6)
+  views      BigInt?
+  /// Null when the creator has hidden like counts. Drops the post from the
+  /// SECONDARY outcome only, counted and reported — hiding likes is not
+  /// independent of how a post performed.
+  likes      BigInt?
+  comments   BigInt?
+
+  post CorpusPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, capturedAt])
+  @@index([postId, capturedAt(sort: Desc)])
+  @@map("metric_snapshots")
+  @@schema("corpus")
+}
+
+/// Per-channel tallies for one poll run. Exists so the weekly readiness report
+/// can state exclusions BY REASON (spec §12.2): a video excluded on duration is
+/// never stored as a post, so a tally computed at read time could not see it.
+/// Carries no text and no per-video identity.
+model CorpusPollRun {
+  id             BigInt   @id @default(autoincrement())
+  channelId      String   @map("channel_id") @db.Uuid
+  runAt          DateTime @map("run_at") @db.Timestamptz(6)
+  videosSeen     Int      @map("videos_seen")
+  postsIncluded  Int      @map("posts_included")
+  /// `{ duration_over_30s: 12, missing_published_at: 0, not_public: 3 }`
+  excluded       Json
+
+  channel CorpusChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, runAt])
+  @@index([runAt(sort: Desc)])
+  @@map("poll_runs")
+  @@schema("corpus")
+}
+
+/// The source file, once acquired. EMPTY until spec §7 is decided deliberately —
+/// `SourceResolver` has one implementation and it resolves nothing. The pipeline
+/// is complete and testable without it.
+model CorpusClip {
+  id               String   @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  postId           String   @unique @map("post_id") @db.Uuid
+  storageKey       String   @map("storage_key")
+  checksumSha256   String   @map("checksum_sha256")
+  durationSec      Float?   @map("duration_sec")
+  /// How it was obtained — `creator_upload`, `capture_at_post_time`, … Recorded
+  /// per clip because the routes carry different licence and ToS positions.
+  acquisitionRoute String   @map("acquisition_route")
+  acquiredAt       DateTime @default(now()) @map("acquired_at") @db.Timestamptz(6)
+
+  post   CorpusPost    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  scores CorpusScore[]
+
+  @@map("clips")
+  @@schema("corpus")
+}
+
+/// Raw ML output per clip. NO PERCENTILE, deliberately (spec §4c):
+/// `percentileInChannel` and `resonanceScore` rank against a WORKSPACE's prior
+/// analyses, and a crawled channel has no workspace and no tenant — the number
+/// would be undefined at best. The within-creator ranking is applied at extract
+/// time in `research/`, where the comparison set is the creator's own posts,
+/// which is also the statistically correct scope.
+model CorpusScore {
+  id                String   @id @default(dbgenerated("uuid_generate_v7()")) @db.Uuid
+  postId            String   @map("post_id") @db.Uuid
+  clipId            String   @map("clip_id") @db.Uuid
+  attempt           Int
+  timelineStartSec  Float[]  @map("timeline_start_sec")
+  timelineAttention Float[]  @map("timeline_attention")
+  timelineVisual    Float[]  @map("timeline_visual")
+  timelineAudio     Float[]  @map("timeline_audio")
+  timelineLanguage  Float[]  @map("timeline_language")
+  /// The five axes × {mean, std, peak}, exactly as `axisBandsSchema` sends them.
+  axisBands         Json     @map("axis_bands")
+  transcript        Json?
+  /// `@repo/scoring`'s `composite()` — the SAME function `apps/worker` scores
+  /// customer analyses with. If this were computed by different code the
+  /// backtest would silently stop describing the product.
+  composite         Float
+  device            String?
+  durationMs        Int      @map("duration_ms")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  post CorpusPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  clip CorpusClip @relation(fields: [clipId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, attempt])
+  @@index([clipId])
+  @@map("scores")
+  @@schema("corpus")
 }
