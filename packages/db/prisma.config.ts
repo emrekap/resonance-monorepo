@@ -36,7 +36,9 @@ export default defineConfig({
       create table if not exists storage.buckets (
         id text primary key,
         name text not null,
-        public boolean default false
+        public boolean default false,
+        file_size_limit bigint,
+        allowed_mime_types text[]
       );
       create table if not exists storage.objects (
         id uuid primary key default gen_random_uuid(),
@@ -57,6 +59,14 @@ export default defineConfig({
         if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon nologin noinherit; end if;
         if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated nologin noinherit; end if;
         if not exists (select 1 from pg_roles where rolname = 'service_role') then create role service_role nologin noinherit bypassrls; end if;
+      end $do$;
+
+      -- Supabase ships this publication; 20260805140000_realtime_analyses
+      -- adds a table to it. CREATE PUBLICATION has no IF NOT EXISTS.
+      do $do$ begin
+        if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+          create publication supabase_realtime;
+        end if;
       end $do$;
     `,
   },
