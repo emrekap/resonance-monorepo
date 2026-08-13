@@ -1,0 +1,9 @@
+{
+  "kind": "youtube#playlistItemListResponse",
+  "nextPageToken": "CDIQAA",
+  "items": [
+    { "contentDetails": { "videoId": "vid00000001" } },
+    { "contentDetails": { "videoId": "vid00000002" } },
+    { "contentDetails": { "videoId": "vid00000003" } }
+  ]
+}

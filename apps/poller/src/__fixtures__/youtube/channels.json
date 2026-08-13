@@ -1,0 +1,17 @@
+{
+  "kind": "youtube#channelListResponse",
+  "items": [
+    {
+      "id": "UCabcdefghijklmnopqrstuv",
+      "snippet": { "title": "Example Kitchen" },
+      "contentDetails": { "relatedPlaylists": { "uploads": "UUabcdefghijklmnopqrstuv" } },
+      "statistics": { "subscriberCount": "184000", "hiddenSubscriberCount": false }
+    },
+    {
+      "id": "UChiddensubscribersxxxxx",
+      "snippet": { "title": "Quiet Channel" },
+      "contentDetails": { "relatedPlaylists": { "uploads": "UUhiddensubscribersxxxxx" } },
+      "statistics": { "hiddenSubscriberCount": true }
+    }
+  ]
+}

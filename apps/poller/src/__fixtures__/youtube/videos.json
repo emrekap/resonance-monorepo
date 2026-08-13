@@ -1,0 +1,70 @@
+{
+  "kind": "youtube#videoListResponse",
+  "items": [
+    {
+      "id": "vid00000001",
+      "snippet": {
+        "channelId": "UCabcdefghijklmnopqrstuv",
+        "publishedAt": "2026-07-01T12:00:00Z",
+        "title": "one pan dinner",
+        "description": "#quick #dinner",
+        "tags": ["quick", "dinner"]
+      },
+      "contentDetails": { "duration": "PT29S" },
+      "status": { "license": "creativeCommon", "privacyStatus": "public" },
+      "statistics": { "viewCount": "184203", "likeCount": "9120", "commentCount": "311" }
+    },
+    {
+      "id": "vid00000002",
+      "snippet": {
+        "channelId": "UCabcdefghijklmnopqrstuv",
+        "publishedAt": "2026-07-02T12:00:00Z",
+        "title": "likes are hidden here",
+        "description": "",
+        "tags": []
+      },
+      "contentDetails": { "duration": "PT18S" },
+      "status": { "license": "youtube", "privacyStatus": "public" },
+      "statistics": { "viewCount": "5120", "commentCount": "8" }
+    },
+    {
+      "id": "vid00000003",
+      "snippet": {
+        "channelId": "UCabcdefghijklmnopqrstuv",
+        "publishedAt": "2026-07-03T12:00:00Z",
+        "title": "the long version",
+        "description": "",
+        "tags": []
+      },
+      "contentDetails": { "duration": "PT8M12S" },
+      "status": { "license": "youtube", "privacyStatus": "public" },
+      "statistics": { "viewCount": "22000", "likeCount": "400", "commentCount": "12" }
+    },
+    {
+      "id": "vid00000004",
+      "snippet": {
+        "channelId": "UCabcdefghijklmnopqrstuv",
+        "publishedAt": "2026-07-04T12:00:00Z",
+        "title": "unlisted draft",
+        "description": "",
+        "tags": []
+      },
+      "contentDetails": { "duration": "PT12S" },
+      "status": { "license": "youtube", "privacyStatus": "private" },
+      "statistics": { "viewCount": "3" }
+    },
+    {
+      "id": "vid00000005",
+      "snippet": {
+        "channelId": "UCabcdefghijklmnopqrstuv",
+        "publishedAt": "2026-07-05T12:00:00Z",
+        "title": "live right now",
+        "description": "",
+        "tags": []
+      },
+      "contentDetails": { "duration": "P0D" },
+      "status": { "license": "youtube", "privacyStatus": "public" },
+      "statistics": { "viewCount": "88" }
+    }
+  ]
+}
