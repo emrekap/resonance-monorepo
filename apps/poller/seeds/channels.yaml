@@ -1,0 +1,39 @@
+# The corpus sampling frame (spec §5d).
+#
+# Hand-curated, committed, and deliberately NOT discovered: search.list costs
+# 100 quota units against playlistItems.list's 1, and "here is our frame and
+# why each channel is in it" survives diligence in a way "search returned
+# these" does not.
+#
+# Target: ~40 channels x ~40 Shorts ~= 1,600 posts, spanning niche, format and
+# subscriber tier — comfortably above the prereg floor of >=30 creators with
+# >=20 posts each.
+#
+# Curation criteria, in order of how easy they are to get wrong:
+#
+#   1. VARIANCE. A channel whose Shorts all perform within a narrow band
+#      contributes nothing — there is no ordering to rank. Check the channel's
+#      recent Shorts view counts actually spread before adding it. No automated
+#      discovery can check this, which is why the frame is curated at all.
+#   2. VOLUME. >=20 Shorts under 30 seconds already published.
+#   3. CADENCE. Still posting, so the daily poll has new posts to mature.
+#   4. NOT A REPOST ACCOUNT. Compilations and reuploads attribute someone
+#      else's content to this creator.
+#   5. SPREAD. Vary niche and subscriber tier across the frame. Record the
+#      frame's remaining biases in the report rather than leaving them implicit.
+#
+# `id` is the channelId (UC + 22 characters) from youtube.com/channel/<id> —
+# NOT the @handle, which resolves to a different traversal.
+#
+# THIS FILE IS INTENTIONALLY EMPTY AND WILL FAIL VALIDATION UNTIL CURATED.
+# `loadSeeds()` throws "the sampling frame is empty" rather than polling
+# nothing quietly, so the poller cannot start against a frame nobody chose.
+#
+#   - id: UCxxxxxxxxxxxxxxxxxxxxxx
+#     handle: "@example"
+#     niche: cooking
+#     tier: mid
+#     rationale: "Posts 3-5 Shorts a week with visibly variable reach; not a repost account."
+
+version: 1
+channels: []
