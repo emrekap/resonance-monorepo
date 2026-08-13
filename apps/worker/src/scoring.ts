@@ -1,5 +1,18 @@
-import type { AxisBands, AxisSummary } from '@repo/queue';
+import type { AxisBands } from '@repo/queue';
 import { AxisConfidence, ResonanceAxis } from '@repo/db/enums';
+import { BAND_SUMMARY, band, composite } from '@repo/scoring';
+
+/**
+ * The band → composite reduction now lives in `@repo/scoring`, because
+ * `apps/poller` must score the research corpus with the identical function —
+ * see that package's docstring. Re-exported here so this module stays the one
+ * place `apps/worker` reads scoring from.
+ *
+ * Imported and re-exported rather than passed straight through with
+ * `export … from`: that form binds no local name, and `scoreAnalysis` below
+ * calls both.
+ */
+export { BAND_SUMMARY, band, composite };
 
 /**
  * Turning the ML layer's raw band activations into the numbers a creator sees.
@@ -30,44 +43,6 @@ import { AxisConfidence, ResonanceAxis } from '@repo/db/enums';
  */
 export const MIN_HISTORY = 5;
 
-/**
- * Which of the three per-axis statistics becomes the score.
- *
- * **This is the most consequential line in the file, and it is a guess.** All
- * three cross the queue (see `axisSummarySchema`) precisely so that settling it
- * against real data is a one-word edit here rather than a change to `apps/ml`,
- * the contract and a GPU deploy.
- *
- * - `peak` — mean of the top quartile of segments. Chosen as the default: it is
- *   the closest of the three to the question the product asks ("did this hold
- *   attention at its best moments"), and unlike `mean` it does not average the
- *   signal away.
- * - `std` — how much the network's response varied. `docs/resonance-model-design.md`
- *   §0 offers this as a "dynamism" proxy. Blind to direction: a clip that swings
- *   downward scores like one that swings up.
- * - `mean` — the original choice, kept for comparison and **not recommended**.
- *   TRIBE predicts z-scored BOLD, so a time-average sits near zero by
- *   construction; that is the same objection §0 raises against the brain-wide
- *   average, and it applies within a network too, just less severely.
- *
- * How to settle it: run a batch of real clips, rank each way, and check which
- * ordering a human would defend. Until then this is a documented guess, not a
- * finding.
- */
-export const BAND_SUMMARY: keyof AxisSummary = 'peak';
-
-/**
- * How much each axis moves the headline number.
- *
- * Weighted by the defensibility tiers in docs/resonance-model-design.md §1a —
- * visual and audio are the best-predicted cortex and match their input modality
- * one-to-one, language is solid only for speech. EMOTIONAL_PULL and MEMORABILITY
- * are deliberately **absent**: both are cortical shadows of subcortical
- * structures that fsaverage5 does not contain, and a BETA axis has no business
- * moving the number on the front of the screen.
- */
-const COMPOSITE_WEIGHTS = { visual: 0.4, audio: 0.35, language: 0.25 } as const;
-
 /** Axis order — must match `analysis_axis_scores.position` and `AXES` in apps/ml. */
 const AXIS_ORDER = [
   { axis: ResonanceAxis.VISUAL_ATTENTION, band: 'visual', confidence: AxisConfidence.STABLE },
@@ -94,20 +69,6 @@ export type Scored = {
   confidence: number | null;
   axisRows: AxisRow[];
 };
-
-/** The chosen statistic for one axis. See {@link BAND_SUMMARY}. */
-export function band(bands: AxisBands, axis: keyof AxisBands): number {
-  return bands[axis][BAND_SUMMARY];
-}
-
-/** The single number the percentile ranks. See {@link COMPOSITE_WEIGHTS}. */
-export function composite(bands: AxisBands): number {
-  return (
-    band(bands, 'visual') * COMPOSITE_WEIGHTS.visual +
-    band(bands, 'audio') * COMPOSITE_WEIGHTS.audio +
-    band(bands, 'language') * COMPOSITE_WEIGHTS.language
-  );
-}
 
 /**
  * Turns a continuous rank into a 0–100 score — the **Weibull plotting position**.
