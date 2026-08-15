@@ -126,6 +126,37 @@ Sketch, for whoever writes it:
   backfilled upstream of `write_snapshot`, not passed through and left to be silently accepted by a
   now-nonexistent hole.
 
+## The corpus backtest (a secondary exploratory analysis)
+
+**Not the pre-registered experiment.** See
+[`docs/superpowers/specs/2026-08-12-youtube-corpus-poller-design.md`](../docs/superpowers/specs/2026-08-12-youtube-corpus-poller-design.md) §1a.
+The snapshot declares that in its own manifest, and the report is titled with it
+— there is no invocation that produces a prereg-titled report from corpus data.
+
+`N` and its phase come from the poller's weekly readiness report, which prints
+both. Passing them explicitly is what puts them in the manifest, and a manifest
+that records the floor is what makes two runs comparable or visibly not.
+
+```bash
+# primary outcome — views at a fixed age, within creator, detrended
+.venv/bin/python -m eval extract \
+  --dsn "$APP_SERVICE_DATABASE_URL" \
+  --out snapshots/corpus-primary --outcome views_at_Nd --n-days 14 --phase 1
+
+.venv/bin/python -m eval run --snapshot snapshots/corpus-primary --out out/corpus-primary
+
+# secondary outcome — engagement rate, with its own exclusion set
+.venv/bin/python -m eval extract \
+  --dsn "$APP_SERVICE_DATABASE_URL" \
+  --out snapshots/corpus-secondary --outcome engagement_rate --n-days 14 --phase 1
+
+.venv/bin/python -m eval run --snapshot snapshots/corpus-secondary --out out/corpus-secondary
+```
+
+The two outcomes are never mixed inside one parquet: their exclusion sets differ
+(the primary takes no view-based exclusion at all), so the primary runs on
+strictly more posts and the report states both Ns.
+
 ## Conventions
 
 - **No torch.** This package evaluates predictions; it never runs a model.

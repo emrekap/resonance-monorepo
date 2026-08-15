@@ -13,3 +13,4 @@ pyarrow>=17.0        # parquet
 scipy>=1.14          # spearmanr, wilcoxon, expit
 scikit-learn>=1.5    # Ridge, StandardScaler
 pytest>=8.0
+psycopg[binary]>=3.2  # the corpus extract's only database dependency

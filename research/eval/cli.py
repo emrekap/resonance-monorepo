@@ -37,6 +37,13 @@ from pathlib import Path
 import numpy as np
 
 from eval.controls import run_controls
+from eval.extract import (
+    FALLBACK_N_DAYS_FOR_PHASE_1,
+    PRIMARY_OUTCOME,
+    SECONDARY_OUTCOME,
+    read_corpus,
+    write_corpus_snapshot,
+)
 from eval.ladder import BASELINE_RUNGS, RUNGS, fit_predict
 from eval.metrics import (
     mean_over_creators,
@@ -85,6 +92,26 @@ WORLDS = {
 #: a CI job or a shell script that only reads the exit status.
 EXIT_OK = 0
 EXIT_VOID = 2
+
+
+def maturation_from_args(n_days: int, phase: int) -> dict:
+    """The maturation block that travels in the manifest.
+
+    `N` comes from `apps/poller` (which computes it and prints it in the weekly
+    readiness report), not from a second implementation here — a `N` that could
+    be derived two ways is exactly the drift the one-parameter rule exists to
+    prevent. The consistency check below is the one thing worth asserting: a
+    phase-1 run uses the fallback BY DEFINITION, so a manifest claiming phase 1
+    with some other value is a computed number mislabelled as an assumed one.
+    """
+    if phase not in (1, 2):
+        raise ValueError(f"phase must be 1 or 2, got {phase}")
+    if phase == 1 and n_days != FALLBACK_N_DAYS_FOR_PHASE_1:
+        raise ValueError(
+            f"phase 1 uses the fallback N={FALLBACK_N_DAYS_FOR_PHASE_1}, not {n_days} — "
+            "if this N was computed, it is phase 2"
+        )
+    return {"n_days": n_days, "phase": phase}
 
 
 def _select_baseline(rungs: dict[str, dict[str, float]]) -> str | None:
@@ -242,11 +269,39 @@ def main(argv: list[str] | None = None) -> int:
     synth_cmd.add_argument("--world", choices=sorted(WORLDS), default="signal")
     synth_cmd.add_argument("--out", required=True, type=Path)
 
+    extract_cmd = sub.add_parser("extract", help="write a snapshot from the corpus schema")
+    extract_cmd.add_argument("--dsn", required=True, help="APP_SERVICE_DATABASE_URL")
+    extract_cmd.add_argument("--out", required=True, type=Path)
+    extract_cmd.add_argument(
+        "--outcome", choices=[PRIMARY_OUTCOME, SECONDARY_OUTCOME], default=PRIMARY_OUTCOME
+    )
+    extract_cmd.add_argument(
+        "--n-days", type=int, required=True, help="the maturation parameter, from the readiness report"
+    )
+    extract_cmd.add_argument("--phase", type=int, required=True, choices=[1, 2])
+
     args = parser.parse_args(argv)
 
     if args.command == "synth":
         write_world(WORLDS[args.world], args.out)
         print(f"wrote {args.world} snapshot to {args.out}")
+        return EXIT_OK
+
+    if args.command == "extract":
+        from datetime import datetime, timezone
+
+        rows = read_corpus(args.dsn)
+        built = write_corpus_snapshot(
+            rows,
+            args.out,
+            outcome=args.outcome,
+            maturation=maturation_from_args(args.n_days, args.phase),
+            now=datetime.now(timezone.utc),
+        )
+        print(
+            f"wrote {len(built.posts)} posts / {built.posts['creator_id'].nunique()} creators "
+            f"to {args.out} — outcome {args.outcome}, exclusions {built.extra['exclusions']}"
+        )
         return EXIT_OK
 
     payload = run(args.snapshot, args.out, seed=args.seed)

@@ -56,6 +56,11 @@ AXIS_STATS = ("mean", "std", "peak")
 
 TEXT_DIMS = 128
 
+#: Mirrors `FALLBACK_N_DAYS` in `apps/poller/src/maturation.ts`. Only used to
+#: check that a phase-1 manifest carries the fallback it claims — the value
+#: itself is always supplied by the caller, never computed here.
+FALLBACK_N_DAYS_FOR_PHASE_1 = 14
+
 #: Stamped into every corpus manifest. `cli.run` copies it into the payload and
 #: `report.render_report` titles the artifact with it.
 SECONDARY_ANALYSIS = {
@@ -298,3 +303,87 @@ def write_corpus_snapshot(
         extra=built.extra,
     )
     return built
+
+
+# ─── reading the corpus ──────────────────────────────────────────────────────
+
+#: One row per scored post, with its snapshots and axis bands folded in.
+#:
+#: `corpus.scores` is joined, not left-joined: a post with no score has no
+#: features, so it cannot be a row in any snapshot. Posts awaiting acquisition
+#: are therefore absent rather than present-and-null, which is what keeps the
+#: feature arrays row-aligned with the parquet by construction.
+CORPUS_SQL = """
+  select
+    p.id::text                                as post_id,
+    c.id::text                                as creator_id,
+    p.published_at                            as published_at,
+    p.duration_sec                            as duration_sec,
+    coalesce(array_length(p.tags, 1), 0)      as hashtag_count,
+    coalesce(c.subscriber_count, 0)           as follower_count,
+    s.transcript                              as transcript,
+    s.axis_bands                              as axis_bands,
+    s.composite                               as composite,
+    (
+      select coalesce(
+        json_agg(json_build_array(m.captured_at, m.views, m.likes, m.comments)),
+        '[]'::json
+      )
+      from corpus.metric_snapshots m
+      where m.post_id = p.id
+    )                                         as snapshots
+  from corpus.posts p
+  join corpus.channels c on c.id = p.channel_id
+  join corpus.scores s on s.post_id = p.id
+  where p.published_at is not null
+  order by c.id, p.published_at
+"""
+
+
+def _transcript_text(transcript) -> str:
+    """The transcript as one string. `None` and `[]` both mean a silent clip."""
+    if not transcript:
+        return ""
+    return " ".join(entry.get("text", "") for entry in transcript).strip()
+
+
+def read_corpus(dsn: str) -> list[CorpusRow]:
+    """Read every scored post out of the `corpus` schema.
+
+    Connects with the same `app_service` credential `apps/poller` uses — corpus
+    tables carry RLS forced with zero policies, so no other role can read them
+    at all.
+    """
+    import psycopg
+    from psycopg.rows import dict_row
+
+    with psycopg.connect(dsn, row_factory=dict_row) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(CORPUS_SQL)
+            records = cursor.fetchall()
+
+    return [
+        CorpusRow(
+            post_id=record["post_id"],
+            creator_id=record["creator_id"],
+            published_at=record["published_at"],
+            duration_sec=float(record["duration_sec"]),
+            hashtag_count=int(record["hashtag_count"]),
+            follower_count=int(record["follower_count"]),
+            transcript=_transcript_text(record["transcript"]),
+            axis_bands=record["axis_bands"],
+            composite=float(record["composite"]),
+            snapshots=[
+                (
+                    datetime.fromisoformat(captured_at)
+                    if isinstance(captured_at, str)
+                    else captured_at,
+                    None if views is None else int(views),
+                    None if likes is None else int(likes),
+                    None if comments is None else int(comments),
+                )
+                for captured_at, views, likes, comments in record["snapshots"]
+            ],
+        )
+        for record in records
+    ]
