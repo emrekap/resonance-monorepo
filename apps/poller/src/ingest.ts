@@ -28,10 +28,7 @@ import type { YouTubeVideo } from './youtube.ts';
 export const MAX_DURATION_SEC = 30;
 
 export type ExclusionReason =
-  | 'duration_over_30s'
-  | 'not_a_clip'
-  | 'not_public'
-  | 'missing_published_at';
+  'duration_over_30s' | 'not_a_clip' | 'not_public' | 'missing_published_at';
 
 const REASONS: ExclusionReason[] = [
   'duration_over_30s',
