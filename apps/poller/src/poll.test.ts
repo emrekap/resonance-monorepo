@@ -32,10 +32,13 @@ const video = (id: string, overrides: Partial<YouTubeVideo> = {}): YouTubeVideo 
   ...overrides,
 });
 
+// The fakes below answer with `Promise.resolve` rather than `async`: nothing
+// here awaits, and `@typescript-eslint/require-await` rejects an async function
+// with no await. Same posture as `youtube.test.ts`'s fake fetch.
 function fakeYouTube(videos: YouTubeVideo[], channel: Partial<YouTubeChannel> = {}): YouTubeClient {
   return {
-    async channels() {
-      return [
+    channels() {
+      return Promise.resolve([
         {
           id: SEED.id,
           title: 'Example Kitchen',
@@ -43,13 +46,13 @@ function fakeYouTube(videos: YouTubeVideo[], channel: Partial<YouTubeChannel> = 
           subscriberCount: 184000,
           ...channel,
         },
-      ];
+      ]);
     },
-    async uploads(_playlistId, limit) {
-      return videos.slice(0, limit).map((v) => v.id);
+    uploads(_playlistId, limit) {
+      return Promise.resolve(videos.slice(0, limit).map((v) => v.id));
     },
-    async videos(ids) {
-      return videos.filter((v) => ids.includes(v.id));
+    videos(ids) {
+      return Promise.resolve(videos.filter((v) => ids.includes(v.id)));
     },
   };
 }
@@ -59,30 +62,33 @@ function fakeStore(stored: StoredPost[] = []) {
   const runs: { videosSeen: number; postsIncluded: number; excluded: Record<string, number> }[] =
     [];
   const store: CorpusStore = {
-    async upsertChannel() {
-      return { id: 'channel-uuid' };
+    upsertChannel() {
+      return Promise.resolve({ id: 'channel-uuid' });
     },
-    async upsertPosts(_channelId, posts) {
-      return posts.map(
-        (post) =>
-          stored.find((s) => s.platformVideoId === post.platformVideoId) ?? {
-            id: `post-${post.platformVideoId}`,
-            platformVideoId: post.platformVideoId,
-            firstSeenAt: RUN_AT,
-            lastSnapshotAt: null,
-          },
+    upsertPosts(_channelId, posts) {
+      return Promise.resolve(
+        posts.map(
+          (post) =>
+            stored.find((s) => s.platformVideoId === post.platformVideoId) ?? {
+              id: `post-${post.platformVideoId}`,
+              platformVideoId: post.platformVideoId,
+              firstSeenAt: RUN_AT,
+              lastSnapshotAt: null,
+            },
+        ),
       );
     },
-    async appendSnapshots(rows) {
+    appendSnapshots(rows) {
       appended.push(...rows.map((r) => ({ postId: r.postId, capturedAt: r.capturedAt })));
-      return rows.length;
+      return Promise.resolve(rows.length);
     },
-    async recordPollRun(input) {
+    recordPollRun(input) {
       runs.push({
         videosSeen: input.videosSeen,
         postsIncluded: input.postsIncluded,
         excluded: input.excluded,
       });
+      return Promise.resolve();
     },
   };
   return { store, appended, runs };
@@ -189,8 +195,8 @@ describe('pollChannel', () => {
     const { store } = fakeStore();
     const youtube: YouTubeClient = {
       ...fakeYouTube([]),
-      async channels() {
-        return [];
+      channels() {
+        return Promise.resolve([]);
       },
     };
     const outcome = await pollChannel({

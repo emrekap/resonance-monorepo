@@ -73,7 +73,7 @@ services:
       # Must match QUEUE_PREFIX in packages/queue/src/contract.ts, or the board
       # connects fine and shows two permanently empty queues.
       BULL_PREFIX: resonance
-      BULL_QUEUES: analysis,analysis-results
+      BULL_QUEUES: analysis,analysis-results,corpus-poll,corpus,corpus-results
 
 volumes:
   redis-data:

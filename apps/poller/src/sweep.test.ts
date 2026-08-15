@@ -34,13 +34,16 @@ describe('sweepText', () => {
     const result = await sweepText({
       now: NOW,
       store: {
-        async nullPostText(cutoff) {
+        // `Promise.resolve` rather than `async`: nothing here awaits, and
+        // `@typescript-eslint/require-await` rejects an async function with no
+        // await.
+        nullPostText(cutoff) {
           seen.push(cutoff);
-          return 7;
+          return Promise.resolve(7);
         },
-        async nullChannelText(cutoff) {
+        nullChannelText(cutoff) {
           seen.push(cutoff);
-          return 2;
+          return Promise.resolve(2);
         },
       },
     });

@@ -46,7 +46,7 @@ hand in `apps/ml/queue_contract.py` — **change one, change the other.**
 ## Layout
 
 ```
-apps/    mobile (Expo RN) · web (Next.js, later) · api (Bun+Hono BFF) · ml (Python FastAPI + BullMQ worker) · worker (Bun, results → Postgres)
+apps/    mobile (Expo RN) · web (Next.js, later) · api (Bun+Hono BFF) · ml (Python FastAPI + BullMQ worker) · worker (Bun, results → Postgres) · poller (Bun, YouTube corpus → corpus schema)
 packages/ db (Prisma) · queue (BullMQ contract) · api-contract (Hono RPC client) · tsconfig (@repo/tsconfig) · eslint-config (@repo/eslint-config) · ml-client (empty placeholder — the queue replaced the HTTP seam it was for; see its README)
 infra/   docker (local Redis + bull-board) · deploy
 research/ eval harness for the pre-registered validation experiment (Python island, never deploys)
@@ -132,6 +132,8 @@ bun run docker:local                 # Redis (`docker:local:tools` adds bull-boa
 cd apps/api    && bun run dev        # API → http://localhost:3000/health
 cd apps/worker && bun run dev        # results → Postgres
 cd apps/ml     && python worker.py   # GPU consumer
+
+cd apps/poller && bun run dev        # the corpus poller (needs a curated seeds/channels.yaml)
 ```
 
 `apps/ml` is a **Python island** (no `package.json`, so Bun/Turbo ignore it by design) — run it via
