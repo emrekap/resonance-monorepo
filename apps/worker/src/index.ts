@@ -40,8 +40,21 @@ worker.on('error', (error) => {
   console.error('[results] worker error:', error);
 });
 
+/**
+ * The HOST only, never the URL: `REDIS_URL` carries a password, and a boot
+ * banner is the easiest place in a codebase to leak one into a terminal or a
+ * log aggregator. (Observed happening before this guard existed.)
+ */
+function redisHost(): string {
+  try {
+    return new URL(redisUrl()).host;
+  } catch {
+    return '<unparseable REDIS_URL>';
+  }
+}
+
 console.log(
-  `👷 resonance-worker consuming "${QUEUE_PREFIX}:${ANALYSIS_RESULTS_QUEUE}" on ${redisUrl()}`,
+  `👷 resonance-worker consuming "${QUEUE_PREFIX}:${ANALYSIS_RESULTS_QUEUE}" on ${redisHost()}`,
 );
 
 // Said once at boot rather than per job: without a key every analysis still
