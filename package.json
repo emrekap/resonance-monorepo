@@ -20,7 +20,8 @@
     "docker:local": "bun run --cwd=infra/docker docker compose up -d",
     "docker:local:tools": "bun run --cwd=infra/docker docker compose --profile tools up -d",
     "ngrok": "ngrok http --url=tashina-unstemmed-shonna.ngrok-free.dev 3000",
-    "db:deploy": "bun run --cwd=packages/db db:deploy"
+    "db:deploy": "bun run --cwd=packages/db db:deploy",
+    "ml:deploy": "cd apps/ml && python manage_space.py deploy"
   },
   "devDependencies": {
     "turbo": "^2.10.8",

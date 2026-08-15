@@ -57,11 +57,14 @@
 # The `tier` values below read: nano <10k, micro 10k-100k, mid 100k-1M,
 # large >1M.
 #
-# KNOWN BIAS, recorded rather than left implicit (criterion 5): the frame is
-# currently 2 mid + 5 large and has NO nano or micro channels, so it cannot yet
-# say anything about how the composite behaves at small audience sizes. Fixing
-# that needs hand-picked small channels — they are not findable from memory and
-# `search.list` costs 100 quota units against playlistItems.list's 1.
+# KNOWN BIAS, recorded rather than left implicit (criterion 5). After batch 3
+# (2026-08-15) the frame is 13 nano + 6 micro + 2 mid + 5 large. What it still
+# cannot claim: (a) the MID tier (100k-1M) is the thin one now, at 2; (b) the
+# nano/micro additions skew South/Southeast Asian gardening-fitness-art,
+# because that is who a recent-uploads probe surfaces posting <=30 s daily —
+# Western nano creators mostly post 30-60 s; (c) gardening is the largest
+# single niche at 7 channels. Within-creator ranking blunts (b) and (c), but
+# any cross-channel claim must carry them. Still ~14 short of the ~40 target.
 
 version: 1
 channels:
@@ -105,3 +108,111 @@ channels:
     niche: dessert
     tier: large
     rationale: '17/50 clear <=30s with a 58.2x spread, posted 5 days ago. Smallest of the five at 5.8M subs, so it carries what tier range the frame has.'
+
+  # ─── Batch 3 (2026-08-15): the nano/micro tier ──────────────────────────────
+  #
+  # Candidates were SURFACED by one search.list page per niche query (the one
+  # legitimate use of that 100-unit call: generating names, deciding nothing),
+  # then MEASURED by the same screener as batch 2 (one page of 50 recent
+  # uploads; spread is p90/p10 views across the <=30 s clips), then VETTED for
+  # criterion 4 by reading each channel's own description and eight recent
+  # titles. That last pass rejected 17 of 36 numeric survivors as repost farms
+  # or AI slop — the tells were third-person titles over other people's
+  # footage, identical templated titles, and description/content mismatch.
+  # Membership was decided by the measurements and the vet, not the search.
+
+  - id: UCR5rWajcXTsL9-EeKKOQlHg
+    handle: '@jass_fitness_hub'
+    niche: fitness
+    tier: nano
+    rationale: '611 subs; 46/50 clear <=30s with a 144.8x spread, posted yesterday. Own gym demos, first person, single coherent niche.'
+  - id: UCYs0f_AHLs4SuQyycIk6jbw
+    handle: '@creatortilakraj'
+    niche: gardening
+    tier: nano
+    rationale: '663 subs; 50/50 clear <=30s with an 80.1x spread, posted today. Hindi home-gardening jugaad, visibly his own garden and builds.'
+  - id: UCTcDRL-h-B28IYzluWkUZ4g
+    handle: '@kimsacrylicdreams'
+    niche: art
+    tier: nano
+    rationale: '953 subs; 46/50 clear <=30s with an 83.6x spread, posted today. Named artist painting her own canvases, sells the originals. Median views ~275 — genuinely nano reach, which is the point of the tier.'
+  - id: UCVqZ6hEpUo0WaYeNCToyrvQ
+    handle: '@kangkebun-f7l'
+    niche: gardening
+    tier: nano
+    rationale: '964 subs; 49/50 clear <=30s with a 13.6x spread, posted yesterday. Indonesian home gardener documenting his own yard, bilingual titles.'
+  - id: UCzR640mjZNwDq9v--jnwMPA
+    handle: '@shegrowsathome'
+    niche: gardening
+    tier: nano
+    rationale: '1.5k subs; 24/50 clear <=30s with a 7.8x spread, posted today. US seed-bank founder, personal first-person content — one of the few Western nano channels the probe surfaced.'
+  - id: UCk44b64xMlM2AFjtHtclREQ
+    handle: '@fitwithnamrataa'
+    niche: yoga
+    tier: nano
+    rationale: '2.3k subs; 40/50 clear <=30s with a 30.6x spread, posted yesterday. Named instructor (Namrata Sharma) demonstrating her own asanas, Hindi/English.'
+  - id: UC2SCiAMRsvOJPcexkIjSG-w
+    handle: '@trustedpickles777'
+    niche: food
+    tier: nano
+    rationale: '3.2k subs; 43/50 clear <=30s with a 23.1x spread, posted today. Malayalam home kitchen-and-garden channel, unmistakably one household''s own content.'
+  - id: UColdLkLuhtH7go9J1Lp1dNg
+    handle: '@nabeelaartgallery6764'
+    niche: art
+    tier: nano
+    rationale: '3.3k subs; 49/50 clear <=30s with a 4.1x spread, posted yesterday. Own acrylic tutorials; spread is modest but above the 3x floor.'
+  - id: UCC6vpbnEX6dnRI_w9dZx70g
+    handle: '@artbykise'
+    niche: art
+    tier: nano
+    rationale: '3.5k subs; 28/50 clear <=30s with a 14.8x spread, posted today. Named artist (KISE), paints and sells prints, posts self-critiques — original beyond doubt.'
+  - id: UCVbKPASWCdevByS3tIF_13Q
+    handle: '@wisdomutd'
+    niche: fitness
+    tier: nano
+    rationale: '3.6k subs; 46/50 clear <=30s with a 3.8x spread, posted today. Own calisthenics workouts. Weakest spread of the batch — near the 3x floor; drop first if the tier fills.'
+  - id: UCQCLIdueRFOAnoRIhVajTTw
+    handle: '@mudrasandmovements'
+    niche: pilates
+    tier: nano
+    rationale: '5.7k subs; 29/50 clear <=30s with a 9.7x spread, posted today. Online Pilates/barre studio filming its own classes, English.'
+  - id: UCATKDKwSKwR2DlmzNYXp3NA
+    handle: '@twentyeleven-d7k'
+    niche: art
+    tier: nano
+    rationale: '5.7k subs; 43/50 clear <=30s with a 4.8x spread, posted today. First-person paint experiments in the satisfying-ASMR genre — the genre is farm-adjacent, but the experiments are their own.'
+  - id: UCKA-R9hoUYgdWozBXKWVGBg
+    handle: '@ankurveda'
+    niche: gardening
+    tier: nano
+    rationale: '6.1k subs; 29/50 clear <=30s with a 25.7x spread, posted today. Instructional Indian plant-care in its own consistent format.'
+  - id: UCJKe5Ih0XndMTh1XhqrzS7Q
+    handle: '@artlovera12'
+    niche: art
+    tier: micro
+    rationale: '26.7k subs; 34/50 clear <=30s with a 31.5x spread, posted today. Self-described sketch artist mixing process clips with relatable art memes — her own work throughout.'
+  - id: UClxAcOncem1QnFrf0QTCUOw
+    handle: '@espritsavoir11'
+    niche: science
+    tier: micro
+    rationale: 'BORDERLINE, kept with eyes open: 33k subs; 22/50 clear <=30s with a 16.6x spread, posted yesterday. French microscope/curiosity shorts in a consistent format — but it is faceless-facts genre, so criterion 4 rests on the microscope footage being their own. Drop on first sign of recycled footage.'
+  - id: UChZq7MuZiFmv7Ho-dYUjJeg
+    handle: '@the_gamcha_man'
+    niche: science
+    tier: micro
+    rationale: '40.8k subs; 20/50 clear <=30s — at the volume floor — with a 125.3x spread, posted today. Hindi science experiments performed on camera by the creators themselves.'
+  - id: UCc6HzB6_PuiKxvkcWLzNEcg
+    handle: '@preethieg-zs4yd'
+    niche: gardening
+    tier: micro
+    rationale: '48.7k subs; 50/50 clear <=30s — full-page yield — with a 17.6x spread, posted today. Malayalam sack-gardening, one person''s own plot.'
+  - id: UCQvYUYwaDewun5kpGGjij7g
+    handle: '@reiraipetanimuda-z6m'
+    niche: gardening
+    tier: micro
+    rationale: '52.5k subs; 27/50 clear <=30s with a 39.7x spread, posted today. Indonesian young-farmer planting tutorials, own garden.'
+  - id: UClQ3agmf2jpLuQzD-Hda8-Q
+    handle: '@banglagardening'
+    niche: gardening
+    tier: micro
+    rationale: '90.4k subs; 35/50 clear <=30s with a 16.4x spread, posted today. Bengali rooftop-gardening instruction; caps the micro tier just under 100k.'
