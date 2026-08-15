@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "bun run --hot src/index.ts",
     "start": "bun run src/index.ts",
+    "poll": "bun run scripts/run-job.ts poll",
+    "sweep": "bun run scripts/run-job.ts sweep",
+    "readiness": "bun run scripts/run-job.ts readiness",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
