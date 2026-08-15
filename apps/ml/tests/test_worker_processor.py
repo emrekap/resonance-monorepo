@@ -13,6 +13,8 @@ decisions that matter are both booleans-in-disguise:
 
 from __future__ import annotations
 
+import asyncio
+
 import numpy as np
 import pytest
 from bullmq import UnrecoverableError
@@ -37,7 +39,9 @@ def processor(spy_results_queue, monkeypatch):
         return path
 
     monkeypatch.setattr(worker, "_download", _download)
-    return worker.AnalysisProcessor(spy_results_queue)
+    # The GPU semaphore is shared with `CorpusProcessor` in `main()` — both
+    # processors route through `_infer`, which holds it across the model call.
+    return worker.AnalysisProcessor(spy_results_queue, asyncio.Semaphore(1))
 
 
 @pytest.fixture

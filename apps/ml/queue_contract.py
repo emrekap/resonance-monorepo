@@ -191,3 +191,72 @@ class AnalysisFailed(BaseModel):
     error: str
     #: False means this was the last attempt — only then does the analysis go FAILED.
     retryable: bool
+
+
+# ── poller → ml → poller (the research corpus) ───────────────────────────────
+#
+# A symmetric second pair. Mirrors the corpus section of
+# `packages/queue/src/contract.ts` by hand — change one, change the other.
+#
+# Two asymmetries with the analysis pair above, both intentional:
+#   * there is no `corpus.started` — nothing is watching a status column;
+#   * `axisBands` is REQUIRED, because a corpus row exists only to yield a
+#     composite and one without bands can never be ranked.
+
+CORPUS_QUEUE = "corpus"
+CORPUS_RESULTS_QUEUE = "corpus-results"
+
+CORPUS_JOB = "corpus.score"
+
+CORPUS_RESULT_JOB_SUCCEEDED = "corpus.succeeded"
+CORPUS_RESULT_JOB_FAILED = "corpus.failed"
+
+
+class CorpusMedia(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    url: str
+
+
+class CorpusJob(BaseModel):
+    """Payload of a `corpus.score` job on the `corpus` queue."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    corpusPostId: str
+    clipId: str
+    modality: Literal["video", "audio"]
+    media: CorpusMedia
+
+
+class CorpusSucceeded(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    corpusPostId: str
+    clipId: str
+    attempt: int = Field(ge=1)
+    queueJobId: str
+    device: Optional[str] = None
+    startedAt: str
+    finishedAt: str
+    durationMs: int = Field(ge=0)
+    timeline: Timeline
+    durationSec: Optional[float] = Field(default=None, ge=0)
+    transcript: Optional[list[TranscriptEntry]] = None
+    #: Required, not Optional — see the module note above.
+    axisBands: AxisBands
+    stats: Stats
+
+
+class CorpusFailed(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    corpusPostId: str
+    clipId: str
+    attempt: int = Field(ge=1)
+    queueJobId: str
+    device: Optional[str] = None
+    startedAt: str
+    finishedAt: str
+    error: str
+    retryable: bool

@@ -261,6 +261,23 @@ On first startup the weights are downloaded from HuggingFace to `TRIBE_CACHE_DIR
 `./cache/`) — **~10 GB**: the TRIBE v2 checkpoint is only ~1 GB of that, the three encoders are the
 rest. Budget the disk and the first-boot minutes accordingly.
 
+### Two queues, one engine
+
+`worker.py` consumes `analysis` (from `apps/api`) and `corpus` (from
+`apps/poller`), routing both through the same `engine.py`. That sharing is the
+point: a separate queue is not a separate inference path, and if the research
+corpus reduced its features through different code, the backtest would silently
+stop describing the product.
+
+```bash
+python worker.py                    # both queues
+ML_QUEUES=corpus python worker.py   # a dedicated corpus backfill box
+```
+
+The queue split keeps corpus results out of `analysis_results` entirely. It does
+**not** stop the two sharing a GPU — one semaphore spans both workers — so run
+a long backfill on its own instance rather than in front of customer uploads.
+
 ### On the Hugging Face Space
 
 The Space runs **both** processes from one container ([`entrypoint.sh`](entrypoint.sh)): `worker.py`

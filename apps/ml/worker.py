@@ -36,6 +36,11 @@ import engine
 from queue_contract import (
     ANALYSIS_QUEUE,
     ANALYSIS_RESULTS_QUEUE,
+    CORPUS_JOB,
+    CORPUS_QUEUE,
+    CORPUS_RESULTS_QUEUE,
+    CORPUS_RESULT_JOB_FAILED,
+    CORPUS_RESULT_JOB_SUCCEEDED,
     QUEUE_PREFIX,
     RESULT_JOB_FAILED,
     RESULT_JOB_STARTED,
@@ -46,6 +51,9 @@ from queue_contract import (
     AnalysisSucceeded,
     AxisBands,
     AxisSummary,
+    CorpusFailed,
+    CorpusJob,
+    CorpusSucceeded,
     Stats,
     Timeline,
     TranscriptEntry,
@@ -62,6 +70,14 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379")
 # One job at a time by default: concurrency here is GPU memory, not I/O. Two
 # TRIBE runs on one card is how you get an OOM halfway through both.
 CONCURRENCY = int(os.getenv("ML_WORKER_CONCURRENCY", "1"))
+
+# Which queues this instance serves. Both by default; a dedicated corpus
+# backfill box runs with ML_QUEUES=corpus so 1,600 research clips never sit in
+# front of a customer's upload on the same card. The queue split guarantees the
+# two never share a RESULT table (spec §4b) — it cannot, on its own, stop them
+# sharing a GPU, and pretending otherwise would be the kind of claim that is
+# only discovered false under load.
+QUEUES = [q.strip() for q in os.getenv("ML_QUEUES", "analysis,corpus").split(",") if q.strip()]
 
 # A job may legitimately take minutes. BullMQ's lock has to outlive the run or
 # the stalled-job checker hands the same clip to another worker while this one
@@ -241,14 +257,39 @@ def _stats(result: dict) -> Stats:
     )
 
 
-# ─── the processor ───────────────────────────────────────────────────────────
+# ─── the processors ──────────────────────────────────────────────────────────
+
+
+async def _infer(modality: str, url: str, gpu: asyncio.Semaphore) -> dict:
+    """Download, run TRIBE, and reduce — the whole inference path, once.
+
+    Shared verbatim by both processors. **This function is the reason a second
+    queue is safe:** a separate queue is not a separate inference path, and if
+    the corpus reduced its features through different code the backtest would
+    stop describing the product with nothing to catch it.
+
+    `gpu` is held across the model call only. Two Workers each at concurrency 1
+    would otherwise put two TRIBE runs on one card, which is how you get an OOM
+    halfway through both.
+    """
+    # A directory rather than a named temp file: the extension is only known
+    # once the response headers are in, and TemporaryDirectory cleans up
+    # whatever name the download settled on.
+    with tempfile.TemporaryDirectory(prefix="resonance-") as tmp_dir:
+        media_path = await asyncio.to_thread(_download, url, Path(tmp_dir), modality)
+        async with gpu:
+            preds, segments = await asyncio.to_thread(
+                engine.run_inference, modality, str(media_path)
+            )
+        return engine.predictions_to_dict(preds, segments)
 
 
 class AnalysisProcessor:
     """Holds the results queue so every job does not open a new connection."""
 
-    def __init__(self, results: Queue):
+    def __init__(self, results: Queue, gpu: asyncio.Semaphore):
         self.results = results
+        self.gpu = gpu
 
     async def publish(self, name: str, payload, analysis_id: str, attempt: int) -> None:
         """Report an outcome to `apps/worker`.
@@ -310,18 +351,7 @@ class AnalysisProcessor:
         )
 
         try:
-            # A directory rather than a named temp file: the extension is only
-            # known once the response headers are in, and TemporaryDirectory
-            # cleans up whatever name the download settled on.
-            with tempfile.TemporaryDirectory(prefix="resonance-") as tmp_dir:
-                media_path = await asyncio.to_thread(
-                    _download, payload.media.url, Path(
-                        tmp_dir), payload.modality
-                )
-                preds, segments = await asyncio.to_thread(
-                    engine.run_inference, payload.modality, str(media_path)
-                )
-                result = engine.predictions_to_dict(preds, segments)
+            result = await _infer(payload.modality, payload.media.url, self.gpu)
         except Exception as exc:
             finished_at = datetime.now(timezone.utc)
             retryable = attempt < max_attempts and not isinstance(
@@ -381,6 +411,100 @@ class AnalysisProcessor:
         return {"analysisId": analysis_id, "attempt": attempt, "durationMs": duration_ms}
 
 
+class CorpusProcessor:
+    """`corpus` → `corpus-results`. Same engine, different contract.
+
+    No `started` event: nothing is watching a status column, and there is no row
+    to walk from QUEUED to PROCESSING. No insights step either — recommendations
+    are creator-facing output, and 1,600 of them is spend on text nobody reads.
+    """
+
+    def __init__(self, results: Queue, gpu: asyncio.Semaphore):
+        self.results = results
+        self.gpu = gpu
+
+    async def publish(self, name: str, payload, post_id: str, attempt: int) -> None:
+        await self.results.add(
+            name,
+            payload.model_dump(exclude_none=True),
+            {
+                "jobId": f"{post_id}:{attempt}:{name}",
+                "attempts": RESULT_ATTEMPTS,
+                "backoff": {"type": "exponential", "delay": 1000},
+            },
+        )
+
+    async def __call__(self, job, token: str):
+        started_at = datetime.now(timezone.utc)
+        attempt = job.attemptsStarted or (job.attemptsMade + 1)
+        max_attempts = job.opts.get("attempts") or 1
+        payload = CorpusJob(**job.data)
+
+        logger.info(
+            f"[corpus {payload.corpusPostId}] attempt {attempt}/{max_attempts} — "
+            f"{payload.media.url}"
+        )
+
+        try:
+            result = await _infer(payload.modality, payload.media.url, self.gpu)
+        except Exception as exc:
+            finished_at = datetime.now(timezone.utc)
+            retryable = attempt < max_attempts and not isinstance(exc, UnrecoverableError)
+            logger.error(
+                f"[corpus {payload.corpusPostId}] attempt {attempt} failed: {exc}",
+                exc_info=True,
+            )
+            await self.publish(
+                CORPUS_RESULT_JOB_FAILED,
+                CorpusFailed(
+                    corpusPostId=payload.corpusPostId,
+                    clipId=payload.clipId,
+                    attempt=attempt,
+                    queueJobId=str(job.id),
+                    device=engine.device(),
+                    startedAt=iso(started_at),
+                    finishedAt=iso(finished_at),
+                    error=f"{type(exc).__name__}: {exc}"[:2000],
+                    retryable=retryable,
+                ),
+                payload.corpusPostId,
+                attempt,
+            )
+            raise
+
+        finished_at = datetime.now(timezone.utc)
+        bands = _axis_bands(result)
+        if bands is None:
+            # The contract requires them, so producing the payload would fail
+            # anyway — this raises with a message that says why instead.
+            raise UnrecoverableError(
+                f"[corpus {payload.corpusPostId}] parcellation produced no axis bands; "
+                "a corpus score with no bands can never be ranked"
+            )
+
+        await self.publish(
+            CORPUS_RESULT_JOB_SUCCEEDED,
+            CorpusSucceeded(
+                corpusPostId=payload.corpusPostId,
+                clipId=payload.clipId,
+                attempt=attempt,
+                queueJobId=str(job.id),
+                device=engine.device(),
+                startedAt=iso(started_at),
+                finishedAt=iso(finished_at),
+                durationMs=int((finished_at - started_at).total_seconds() * 1000),
+                timeline=_timeline(result),
+                durationSec=float(result.get("duration_sec", 0.0)),
+                transcript=_transcript(result),
+                axisBands=bands,
+                stats=_stats(result),
+            ),
+            payload.corpusPostId,
+            attempt,
+        )
+        return {"corpusPostId": payload.corpusPostId, "attempt": attempt}
+
+
 # ─── entry point ─────────────────────────────────────────────────────────────
 
 
@@ -391,24 +515,42 @@ async def main() -> None:
     logger.info(f"Loading the model before consuming (device: {engine.device()})…")
     await asyncio.to_thread(engine.load_model)
 
-    results = Queue(
-        ANALYSIS_RESULTS_QUEUE,
-        {"connection": REDIS_URL, "prefix": QUEUE_PREFIX},
-    )
-    worker = Worker(
-        ANALYSIS_QUEUE,
-        AnalysisProcessor(results),
-        {
-            "connection": REDIS_URL,
-            "prefix": QUEUE_PREFIX,
-            "concurrency": CONCURRENCY,
-            "lockDuration": LOCK_DURATION_MS,
-        },
-    )
+    # One semaphore across BOTH workers. Concurrency here is GPU memory, not
+    # I/O, and two Workers at concurrency 1 each is two TRIBE runs on one card.
+    gpu = asyncio.Semaphore(CONCURRENCY)
+
+    queues: list[Queue] = []
+    workers: list[Worker] = []
+
+    common = {"connection": REDIS_URL, "prefix": QUEUE_PREFIX,
+              "lockDuration": LOCK_DURATION_MS}
+
+    if "analysis" in QUEUES:
+        results = Queue(ANALYSIS_RESULTS_QUEUE, {
+                        "connection": REDIS_URL, "prefix": QUEUE_PREFIX})
+        queues.append(results)
+        workers.append(
+            Worker(ANALYSIS_QUEUE, AnalysisProcessor(results, gpu),
+                   {**common, "concurrency": CONCURRENCY})
+        )
+
+    if "corpus" in QUEUES:
+        corpus_results = Queue(
+            CORPUS_RESULTS_QUEUE, {"connection": REDIS_URL,
+                                   "prefix": QUEUE_PREFIX}
+        )
+        queues.append(corpus_results)
+        workers.append(
+            Worker(CORPUS_QUEUE, CorpusProcessor(corpus_results, gpu),
+                   {**common, "concurrency": CONCURRENCY})
+        )
+
+    if not workers:
+        raise SystemExit(f"ML_QUEUES={QUEUES!r} selects no queue to consume")
 
     logger.info(
-        f"🧠 ml worker consuming \"{QUEUE_PREFIX}:{ANALYSIS_QUEUE}\" on "
-        f"{_redacted(REDIS_URL)} (concurrency {CONCURRENCY})"
+        f"🧠 ml worker consuming {', '.join(f'{QUEUE_PREFIX}:{q}' for q in QUEUES)} on "
+        f"{_redacted(REDIS_URL)} (gpu concurrency {CONCURRENCY})"
     )
 
     stop = asyncio.Future()
@@ -422,8 +564,10 @@ async def main() -> None:
     # `close()` waits for the in-flight job, so a deploy does not throw away a
     # GPU run that is nearly finished.
     logger.info("Draining… (finishing the current job)")
-    await worker.close()
-    await results.close()
+    for w in workers:
+        await w.close()
+    for q in queues:
+        await q.close()
 
 
 if __name__ == "__main__":
