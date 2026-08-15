@@ -109,6 +109,13 @@ def _validate(posts: pd.DataFrame, text: np.ndarray, neuro: np.ndarray) -> None:
         raise SnapshotError("post_id must be unique")
 
 
+#: Manifest keys `write_snapshot` owns. A producer's `extra` may not overwrite
+#: any of them — `checksums` in particular is what makes a snapshot verifiable.
+RESERVED_MANIFEST_KEYS = frozenset(
+    {"version", "producer", "seed", "rows", "creators", "dims", "checksums"}
+)
+
+
 def write_snapshot(
     out_dir: Path,
     posts: pd.DataFrame,
@@ -117,8 +124,18 @@ def write_snapshot(
     *,
     producer: str,
     seed: int,
+    extra: dict | None = None,
 ) -> None:
-    """Write a validated snapshot. Refuses to write anything malformed."""
+    """Write a validated snapshot. Refuses to write anything malformed.
+
+    `extra` is merged into the manifest, for facts that describe THIS snapshot
+    rather than the format: which outcome it carries, the maturation floor and
+    the phase that produced it, the exclusion tallies, and whether it is the
+    pre-registered analysis or a secondary exploratory one. They belong in the
+    artifact because a reader holding only the snapshot must be able to tell two
+    runs apart — a shifted maturation floor changes what `label` MEANS, and
+    without it that shows up as an unexplainable movement in rho.
+    """
     out_dir = Path(out_dir)
     _validate(posts, text, neuro)
 
@@ -146,6 +163,13 @@ def write_snapshot(
             f"{FEATURES_DIR}/{NEURO_FILE}": _sha256(neuro_path),
         },
     }
+    if extra:
+        collisions = RESERVED_MANIFEST_KEYS & set(extra)
+        if collisions:
+            raise SnapshotError(
+                f"extra manifest keys collide with reserved ones: {', '.join(sorted(collisions))}"
+            )
+        manifest.update(extra)
     (out_dir / MANIFEST_FILE).write_text(json.dumps(manifest, indent=2) + "\n")
 
 

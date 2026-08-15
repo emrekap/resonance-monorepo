@@ -127,10 +127,19 @@ def render_report(payload: dict) -> str:
     # artifact, just one that reads VOID.
     voided = bool(payload.get("voided")) or payload.get("verdict", VOID) == VOID
     band = VOID if voided else payload["verdict"]
+    # A snapshot may declare what analysis it IS. The corpus backtest is a
+    # secondary exploratory analysis against a different label from the
+    # pre-registered one (corpus spec §1a) — and the declaration rides on the
+    # snapshot's manifest rather than a command-line flag on purpose, so there
+    # is no invocation that produces a prereg-titled report from corpus data.
+    analysis = payload.get("analysis") or {}
+    title = analysis.get("title", "Validation result")
     lines: list[str] = [
-        f"# Validation result — {band}",
+        f"# {title} — {band}",
         "",
     ]
+    if analysis.get("note"):
+        lines += [analysis["note"], ""]
     # Name the regime the band came from. The pre-registration reports both
     # splits (§7 "Splits, both reported") but its §8 results table has a single
     # unqualified "Verdict" row -- it never says which regime that verdict is.

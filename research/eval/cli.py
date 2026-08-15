@@ -184,6 +184,8 @@ def run(snapshot_dir: Path, out_dir: Path, *, seed: int = 0) -> dict:
         "snapshot": snap.manifest,
         "seed": seed,
         "voided": False,
+        # Copied from the snapshot, never from an argument — see report.py.
+        "analysis": snap.manifest.get("analysis"),
         "controls": [
             {
                 "name": c.name,

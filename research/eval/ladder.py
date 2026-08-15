@@ -28,10 +28,58 @@ BASELINE_RUNGS: tuple[str, ...] = ("B1", "B2")
 
 RIDGE_ALPHA = 1.0
 
+#: Columns that must never reach a feature matrix, whatever a manifest says.
+#:
+#: `label` and `view_count` are the corpus's two spellings of the same leak: its
+#: PRIMARY outcome is views at a fixed age, so `view_count` there is not a
+#: subtle post-publication leak but the label's IDENTITY, and B1 scoring
+#: near-perfectly is the only symptom. `format` is required by the snapshot
+#: contract but constant in a Shorts-only corpus, and a zero-variance column is
+#: degenerate in a fitted model rather than merely useless. The identifiers are
+#: listed for completeness — a model fit on `post_id` is not a model.
+FORBIDDEN_FEATURE_COLUMNS: tuple[str, ...] = (
+    "label",
+    "view_count",
+    "format",
+    "post_id",
+    "creator_id",
+    "published_at",
+)
+
+# The prereg's own B1 columns must satisfy the same rule they enforce.
+assert not set(METADATA_COLUMNS) & set(FORBIDDEN_FEATURE_COLUMNS)
+
+
+def metadata_columns(snap: Snapshot) -> tuple[str, ...]:
+    """B1's columns: the prereg's, plus whatever this snapshot declares.
+
+    The corpus adds `days_since_publish` (spec §1b): within-creator z-scoring
+    does not remove channel GROWTH, a time trend that lives inside each creator,
+    so the trend is detrended out of the label and also offered to B1 as an
+    explicit covariate. Synthetic snapshots declare nothing and are unaffected.
+
+    The guard lives here, not only in the producer, because this is where the
+    matrix is actually built — a second producer, or a hand-edited manifest,
+    would otherwise route straight past it.
+    """
+    extra = tuple(snap.manifest.get("extra_metadata_columns", ()))
+
+    forbidden = [c for c in extra if c in FORBIDDEN_FEATURE_COLUMNS]
+    if forbidden:
+        raise ValueError(
+            f"extra_metadata_columns names forbidden column(s): {', '.join(forbidden)}"
+        )
+
+    missing = [c for c in extra if c not in snap.posts.columns]
+    if missing:
+        raise ValueError(f"extra_metadata_columns not in posts: {', '.join(missing)}")
+
+    return METADATA_COLUMNS + extra
+
 
 def features_for(rung: str, snap: Snapshot) -> np.ndarray | None:
     """The feature matrix for a rung, or None for B0 which uses no features."""
-    metadata = snap.posts[list(METADATA_COLUMNS)].to_numpy(dtype=float)
+    metadata = snap.posts[list(metadata_columns(snap))].to_numpy(dtype=float)
     if rung == "B0":
         return None
     if rung == "B1":
