@@ -172,6 +172,26 @@ def render_report(payload: dict) -> str:
         mark = "PASS" if control["passed"] else "FAIL"
         lines.append(f"- **{control['name']}** — {mark}. {control['detail']}")
 
+    # Rendered even on a voided run: the controls gate the FITTED result, and
+    # this one fits nothing, so a control failure says nothing about it.
+    zero = payload.get("zero_shot")
+    if zero:
+        lines += [
+            "",
+            "## Zero-shot — the shipped composite, nothing fitted",
+            "",
+            f"Within-creator rho **{_fmt(zero['rho'])}** "
+            f"[{_fmt(zero['lo'])}, {_fmt(zero['hi'])}] "
+            f"over {zero['posts']} posts and {zero['creators']} creators.",
+            "",
+            "No model was trained on this corpus for this number: it is the ranking the "
+            "product ships, correlated against realised reach within each creator. The "
+            "label carries algorithmic distribution as well as content — thumbnail, title, "
+            "posting time, channel momentum and external traffic all move views — so the "
+            "claim is that content predicts realised reach, not that content is its only "
+            "cause.",
+        ]
+
     if voided:
         # Stop here, unconditionally -- even if `regimes` was already computed
         # (a pipeline can build a regime's numbers and only THEN have a

@@ -64,6 +64,7 @@ from eval.splits import (
 from eval.stats import Interval, bootstrap_over_creators, paired_uplift, paired_wilcoxon
 from eval.synth import CONTAMINATED_WORLD, NULL_WORLD, SIGNAL_WORLD, write_world
 from eval.verdict import VOID, explain, verdict
+from eval.zeroshot import zero_shot
 
 #: The two regimes of prereg §7, named. `_evaluate_regime` keys the
 #: creator-overlap leakage rule on the split's name — the rule cannot be derived
@@ -213,6 +214,9 @@ def run(snapshot_dir: Path, out_dir: Path, *, seed: int = 0) -> dict:
         "voided": False,
         # Copied from the snapshot, never from an argument — see report.py.
         "analysis": snap.manifest.get("analysis"),
+        # Computed on every run and reported whether or not the ladder is. It
+        # depends on nothing the controls gate, because nothing is fitted.
+        "zero_shot": zero_shot(snap, seed=seed),
         "controls": [
             {
                 "name": c.name,
