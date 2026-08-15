@@ -47,7 +47,7 @@ describe('the frame', () => {
       runAt: RUN_AT,
     });
     expect(plan.posts.map((p) => p.platformVideoId)).toEqual(['at']);
-    expect(plan.excluded.duration_over_30s).toBe(1);
+    expect(plan.excluded.duration_over_max_limit).toBe(1);
   });
 
   test('excludes a live broadcast and a non-public video, each by its own reason', () => {
@@ -65,7 +65,7 @@ describe('the frame', () => {
       not_a_clip: 2,
       not_public: 1,
       missing_published_at: 1,
-      duration_over_30s: 0,
+      duration_over_max_limit: 0,
     });
   });
 

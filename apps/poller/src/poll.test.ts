@@ -158,7 +158,7 @@ describe('pollChannel', () => {
     expect(runs[0]).toMatchObject({
       videosSeen: 2,
       postsIncluded: 1,
-      excluded: { duration_over_30s: 1 },
+      excluded: { duration_over_max_limit: 1 },
     });
   });
 

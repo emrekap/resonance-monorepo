@@ -900,13 +900,13 @@ model CorpusMetricSnapshot {
 /// never stored as a post, so a tally computed at read time could not see it.
 /// Carries no text and no per-video identity.
 model CorpusPollRun {
-  id             BigInt   @id @default(autoincrement())
-  channelId      String   @map("channel_id") @db.Uuid
-  runAt          DateTime @map("run_at") @db.Timestamptz(6)
-  videosSeen     Int      @map("videos_seen")
-  postsIncluded  Int      @map("posts_included")
-  /// `{ duration_over_30s: 12, missing_published_at: 0, not_public: 3 }`
-  excluded       Json
+  id            BigInt   @id @default(autoincrement())
+  channelId     String   @map("channel_id") @db.Uuid
+  runAt         DateTime @map("run_at") @db.Timestamptz(6)
+  videosSeen    Int      @map("videos_seen")
+  postsIncluded Int      @map("posts_included")
+  /// `{ duration_over_max_limit: 12, missing_published_at: 0, not_public: 3 }`
+  excluded      Json
 
   channel CorpusChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 

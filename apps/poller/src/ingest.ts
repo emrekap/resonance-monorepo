@@ -8,9 +8,9 @@ import type { YouTubeVideo } from './youtube.ts';
  * database, which is the same posture `apps/api` takes with `app.request()`.
  *
  * **What this excludes, and what it deliberately does not.** The only rule
- * applied here is the frame's own definition: a public, dated clip of at most
- * 30 seconds. Every OTHER exclusion in spec §5b — age below the maturation
- * floor, hidden likes, the secondary outcome's denominator floor — is applied
+ * applied here is the frame's own definition: a public, dated clip no longer
+ * than `MAX_DURATION_SEC`. Every OTHER exclusion in spec §5b — age below the
+ * maturation floor, hidden likes, the secondary outcome's denominator floor — is applied
  * at EXTRACT time, per-outcome, and applying any of them here would be a
  * different and much worse thing:
  *
@@ -28,10 +28,10 @@ import type { YouTubeVideo } from './youtube.ts';
 export const MAX_DURATION_SEC = 30;
 
 export type ExclusionReason =
-  'duration_over_30s' | 'not_a_clip' | 'not_public' | 'missing_published_at';
+  'duration_over_max_limit' | 'not_a_clip' | 'not_public' | 'missing_published_at';
 
 const REASONS: ExclusionReason[] = [
-  'duration_over_30s',
+  'duration_over_max_limit',
   'not_a_clip',
   'not_public',
   'missing_published_at',
@@ -88,7 +88,7 @@ export function planIngest(input: { videos: YouTubeVideo[]; runAt: Date }): Inge
       continue;
     }
     if (durationSec > MAX_DURATION_SEC) {
-      excluded.duration_over_30s += 1;
+      excluded.duration_over_max_limit += 1;
       continue;
     }
 

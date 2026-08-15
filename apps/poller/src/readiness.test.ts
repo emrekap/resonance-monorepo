@@ -17,7 +17,12 @@ const input = {
   generatedAt: GENERATED_AT,
   maturation: { nDays: 14, phase: 1 as const },
   channels: [channel('alpha', 42, 30), channel('beta', 41, 3), channel('gamma', 12, 12)],
-  exclusions: { duration_over_30s: 118, not_public: 4, not_a_clip: 2, missing_published_at: 0 },
+  exclusions: {
+    duration_over_max_limit: 118,
+    not_public: 4,
+    not_a_clip: 2,
+    missing_published_at: 0,
+  },
 };
 
 describe('summarise', () => {
@@ -48,7 +53,7 @@ describe('renderReadiness', () => {
   });
 
   test('states exclusions by reason', () => {
-    expect(report).toContain('duration_over_30s');
+    expect(report).toContain('duration_over_max_limit');
     expect(report).toContain('118');
   });
 
