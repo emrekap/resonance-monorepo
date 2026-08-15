@@ -1,9 +1,10 @@
 import { Queue, Worker } from 'bullmq';
 import { prismaService } from '@repo/db';
-import { QUEUE_PREFIX, createRedisConnection, redisUrl } from '@repo/queue';
+import { CORPUS_RESULTS_QUEUE, QUEUE_PREFIX, createRedisConnection, redisUrl } from '@repo/queue';
 
 import { handlePollJob } from './jobs.ts';
 import { POLL_JOB, POLL_QUEUE, SCHEDULES } from './queues.ts';
+import { handleCorpusResult } from './scores.ts';
 import { loadSeeds } from './seeds.ts';
 
 /**
@@ -72,6 +73,21 @@ worker.on('error', (error) => {
   console.error('[poller] worker error:', error);
 });
 
+const results = new Worker(CORPUS_RESULTS_QUEUE, handleCorpusResult, {
+  connection,
+  prefix: QUEUE_PREFIX,
+  // Short database writes, not GPU work. Every handler is idempotent and
+  // order-independent — and unlike the analysis path there is no parent row two
+  // events contend for, so no lock ordering is needed here.
+  concurrency: 8,
+  removeOnComplete: { age: 3_600, count: 1_000 },
+  removeOnFail: { age: 7 * 24 * 3_600 },
+});
+
+results.on('failed', (job, error) => {
+  console.error(`[corpus] ${job?.name ?? 'job'} ${job?.id ?? '?'} failed:`, error.message);
+});
+
 // Fail at boot, loudly, rather than polling an empty frame in silence. A poller
 // that runs against `channels: []` looks healthy in every dashboard and
 // collects nothing.
@@ -87,6 +103,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   console.log(`\n[poller] ${signal} — draining…`);
   try {
     await worker.close();
+    await results.close();
     await queue.close();
     await prismaService.$disconnect();
     await connection.quit();
