@@ -176,8 +176,10 @@ enforced and verified — see [`packages/db/README.md`](packages/db/README.md)),
 **Queue (done):** `@repo/queue` contract, `POST /analyze` enqueues, `apps/ml/worker.py` consumes and
 runs TRIBE (sharing `engine.py` with the FastAPI face), `apps/worker` persists results, and a local
 Redis plus bull-board in `infra/docker/`. Cross-language delivery and payload validation were verified
-end-to-end against a real Redis; the Prisma writes in `apps/worker` are typechecked but have not run
-against a database yet.
+end-to-end against a real Redis; on 2026-08-15 the whole path ran for real — deployed GPU worker (HF
+Space) → Render Redis → local `apps/worker` → Supabase — via the e2e smoke script
+`apps/worker/scripts/todo2-real-clip.ts`, which seeds a real `analyses` row, enqueues, and prints
+what landed.
 
 **Mobile + social (done):** `apps/mobile` (Expo SDK 57, `expo-router`, `src/app` tree) — Supabase
 Google login via the browser PKCE flow, `Stack.Protected` route groups (`(onboarding)` vs `(app)`),
@@ -220,7 +222,7 @@ second the policy cannot resolve). Rows stay scoped by `analyses_select` against
 the payload is never rendered, because a list row also needs `analysis_results` + `media_assets`.
 Typechecked, linted and unit-tested — **no event has been observed reaching a device.**
 
-**Insights (done, unobserved):** a successful analysis now fills every column it can.
+**Insights (done, observed end-to-end 2026-08-15):** a successful analysis now fills every column it can.
 `apps/ml/atlas/` holds a committed Schaefer-2018 17-network fsaverage5 parcellation (parcel ids, not
 axis ids — the mapping lives in `axis_map.py` so it is reviewable); `parcellation.py` reduces the
 `[T × 20484]` tensor to five product axes, and the transcript rides along from the whisperx events
@@ -232,7 +234,15 @@ withheld below 5 priors, because a rank with no history is not a number. Then `i
 validated hard on the way in and best-effort throughout (`ANTHROPIC_API_KEY` unset → analyses still
 score, just without tips). `GET /analyze/:id` returns the lot and the mobile result screen renders
 verdict → timeline → why → do-this. Unit-tested on both sides of the queue, including a shared
-fixture that catches api↔ml contract drift — **but no real clip has run through it end to end.**
+fixture that catches api↔ml contract drift, and run for real on 2026-08-15: a 48 s clip through the
+deployed GPU worker landed all five 48-entry timeline arrays, the transcript, and four
+transcript-grounded recommendations; score/percentile/axis rows were withheld exactly as the
+5-prior cold-start rule says (`TR_SEC` turns out to be 1.0 — one segment per second). **The atlas
+behind the axes is verified against real anatomy** — four checks with controls, including a
+cross-stimulus double dissociation on the deployed checkpoint
+(`apps/ml/scripts/check_atlas_anatomy.py`; evidence committed in `apps/ml/atlas/verification/`;
+findings in `docs/resonance-model-design.md` §2e, notably: the encoder scores stimulus typicality,
+not physiology, so axis numbers for far-out-of-distribution content are not meaningful).
 
 **Validation harness (done, synthetic-only):** `research/` implements the pre-registered analysis
 end to end — snapshot contract, synthetic ground-truth worlds, splits with the prereg's leakage
@@ -269,27 +279,22 @@ channel has been polled.**
 
 ## TODO
 
-**Blocking, and one of them blocks the honesty of everything else.**
+**Blocking.** (Two former members of this list closed on 2026-08-15: the atlas anatomy check —
+see the Insights entry above and `docs/resonance-model-design.md` §2e — and the real-clip run
+through ml → worker → Postgres, which also settled `TR_SEC` = 1.0. The `ML_RECORD_DIR` manifest
+that item promised turned out not to exist in code; the TR came from the timeline instead.)
 
-1. **Check the atlas against real anatomy.** `parcellation.py` asserts the atlas has the expected
-   `n_vertices`, but its **vertex order has never been checked against a real brain** — and a
-   transposed or differently-ordered surface still averages to plausible numbers on all five axes,
-   so the failure is silent by construction. Everything downstream (axes, composite,
-   `percentileInChannel`, `resonanceScore`, the insight prompt) inherits it. The check is cheap: one
-   high-motion clip should light the visual band and little else. **Do this before quoting any axis
-   number to anyone.** Also tracked in `docs/resonance-model-design.md` §2e and
-   `docs/validation-prereg.md` §9.
-2. **Run a real clip through ml → worker → Postgres** and confirm the five timeline arrays land.
-   Same run yields (1), the real per-analysis Anthropic cost, and the `TR_SEC` manifest via
-   `ML_RECORD_DIR` — three unknowns for one GPU-minute.
-3. **Run the upload→analyze flow on-device** against a live GPU worker.
-4. **Run the YouTube connect flow** against real Google credentials + Supabase Google login.
-5. **Curate `apps/poller/seeds/channels.yaml`.** The corpus collects nothing until ~40 channels are
-   in that file, and the maturation parameter needs ~14 days of observations after that before a
-   single label exists — so this is the item with a wall clock attached. It is hand work by design:
-   the criterion no automated discovery can check is **variance** (a channel whose Shorts all land
-   in a narrow band contributes nothing, because there is no ordering to rank). Criteria are in the
-   file's own header. Note (1) above sits upstream of every axis number this corpus would produce.
+1. **Run the upload→analyze flow on-device** against a live GPU worker. The backend half is proven
+   (`apps/worker/scripts/todo2-real-clip.ts` — the standing e2e smoke); what is untested is the
+   mobile upload + signed-URL mint in front of it.
+2. **Run the YouTube connect flow** against real Google credentials + Supabase Google login.
+3. **Grow `apps/poller/seeds/channels.yaml` toward ~40 channels.** Seven screened channels are in
+   and polling as of 2026-08-15, but the frame needs ~40, and it has no nano/micro tier at all
+   (recorded in the file's header as KNOWN BIAS). The maturation parameter needs ~14 days of
+   observations before a single label exists — the wall clock is running, and every missing channel
+   is accrual not happening. Hand work by design: the criterion no automated discovery can check is
+   **variance** (a channel whose Shorts all land in a narrow band contributes nothing, because
+   there is no ordering to rank). Criteria are in the file's own header.
 
 **Product surfaces that are specified but absent.** Each is promised in `docs/` and has no code:
 

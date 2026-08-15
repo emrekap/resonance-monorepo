@@ -155,9 +155,12 @@ Stated here so they cannot be presented as discoveries later:
   vertical UGC is a different distribution; encoders may transfer, brain-calibration may not.
 - **YouTube-only** — Task B's golden label does not exist on IG/TikTok, so temporal generalization
   beyond YouTube is untested by this experiment.
-- **Atlas validity** — the axis→network mapping used for any interpretable-feature ablation has not
-  been checked against real anatomy (see `resonance-model-design.md` §2e). That affects the _why_
-  axes, not the fused-latent B3 result.
+- **Atlas validity** — resolved 2026-08-15, see [Amendment 5](#amendments): the axis→network mapping
+  was checked against real anatomy on four independent lines of evidence, with controls
+  (`resonance-model-design.md` §2e). The residual caveat replacing it: the model scores stimulus
+  _typicality_ relative to its movie-trained distribution, so interpretable-axis values for far
+  out-of-distribution content are not meaningful even with a verified atlas. This still affects only
+  the _why_ axes, not the fused-latent B3 result.
 - **Negative-control false-positive rate** — measured on the harness's own synthetic worlds, not on
   a cohort, by `research/sweep_controls.py`: it sweeps the world seed (the same value also passed to
   `run_controls`) over a stated window, draws a fresh `NULL_WORLD` / `SIGNAL_WORLD` at each seed, and
@@ -247,3 +250,24 @@ that the label-shuffle permutation test cannot detect by construction, because p
 destroys the model's ability to exploit that column exactly as much whether or not the association
 was a real leak. §8 now carries one row per control. **Attestation:** the third control was designed,
 implemented and tested against synthetic worlds only, before any cohort existed.
+
+**Amendment 5 (2026-08-15) — §9's atlas-validity threat is resolved, and replaced by a sharper one.**
+The atlas check §9 called for was run: the committed parcellation is byte-identical to the canonical
+CBIG source (with a hemisphere-swap control); each axis's vertices sit at their network's real
+coordinates on fsaverage5, and a permuted-order control collapses the signature; the checkpoint's
+own config pins the model's output to the same left-then-right fsaverage5 ordering; and on the
+deployed checkpoint, through the production queue path, visual and auditory bands double-dissociate
+across stimuli (visual tops the visually-rich clip; audio tops the speech clip and bottoms the
+silenced one) — an axis×stimulus interaction a permuted order cannot produce. Method, criteria and
+artifacts: `apps/ml/scripts/check_atlas_anatomy.py`, `apps/ml/atlas/verification/` (committed, so
+the verdict re-derives without a GPU). Two honest notes.
+First, the check's criteria were corrected **during** the run: the first stimulus (a synthetic
+flickering checkerboard) scored below baseline on every band because the encoder is movie-trained
+and scores stimulus typicality, not physiology — so the verdict moved from within-clip signs to
+cross-stimulus contrasts of per-clip-centered bands, and a criterion expecting the `language`
+(semantic, modality-invariant) band to prefer speech over silent narrative was demoted to a reported
+non-gate. Both corrections are visible in the script's history and were made before any cohort
+existed; nothing in this document's own analysis plan changed. Second, the typicality finding is
+itself the replacement threat, now recorded in §9's bullet. **Attestation:** run against three
+synthetic/public test clips only (a generated checkerboard, generated speech, an open-licence film
+excerpt); no cohort, no creator data, no validation labels were observed.

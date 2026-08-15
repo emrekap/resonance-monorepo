@@ -216,13 +216,28 @@ creators can assemble.
 - **Goodhart/feedback.** Once creators optimize to the score, the score↔reality link drifts. Monitor
   calibration over time.
 - **Small-n creators.** Most have <50 posts. Personalization must degrade to cohort/global.
-- **The axis→network mapping is unvalidated.** Open, and worth stating plainly because everything in
-  §1a rests on it: the shipped parcellation asserts the atlas has the expected number of vertices,
-  but **its vertex order has never been checked against real anatomy.** A transposed or
-  differently-ordered surface would still average to plausible-looking numbers on every axis — the
-  failure is silent by construction. The cheap check is a high-motion clip, which should light the
-  visual band and little else; until one has run, treat the five axes as wired-up rather than
-  verified. Tracked in `CLAUDE.md`'s TODO.
+- **The axis→network mapping is verified against real anatomy (2026-08-15).** It was the open
+  pitfall here for a while, so the evidence is worth listing. Four independent checks, each with a
+  control: (1) the committed atlas is byte-identical to a fresh download of the canonical CBIG
+  Schaefer-2018 annot files, and an RH-then-LH control confirms the comparison would catch a
+  hemisphere swap; (2) each axis's vertices sit where the anatomy sits on real fsaverage5
+  coordinates — visual most posterior (y=−62), limbic most inferior (z=−27), auditory most lateral
+  (|x|=54), DMN most medial, language 58% left-lateralized — and a permuted-order control collapses
+  all of it; (3) TRIBE's output ordering is pinned in source: the `facebook/tribev2` checkpoint's
+  own config projects training targets to fsaverage5 stacked left-then-right, and nothing at
+  inference reorders; (4) empirically, on the deployed checkpoint via the production queue path, a
+  **double dissociation**: the visual band is the top band only on a visually-rich clip, and the
+  audio band is the top band on a speech clip and the bottom band on a silenced one — an
+  axis×stimulus interaction a scrambled order cannot produce, since permuted masks all average the
+  same mixture. Re-run with `apps/ml/scripts/check_atlas_anatomy.py`; the run's payloads are
+  committed in `apps/ml/atlas/verification/`, so the verdict re-derives without a GPU. Two findings from the run that outlive it: **TRIBE scores stimulus
+  typicality, not physiology** — a synthetic flickering checkerboard (a textbook V1 localizer) read
+  as _below baseline everywhere_ because a movie-trained encoder has never seen one, so axis numbers
+  for far-out-of-distribution content should not be interpreted; and the `language` mask
+  (TempPar/DefaultB) is the **semantic** system and is modality-invariant — a silent narrative
+  drives it as hard as spoken sentences, which is consistent with its design ("solid for speech,
+  meaningless without it") but means it does not dissociate on a speech-vs-silent contrast the way
+  auditory cortex does.
 
 ### 2f. How we know it's real — baselines + the killer experiment
 

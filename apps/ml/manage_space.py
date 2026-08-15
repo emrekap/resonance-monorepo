@@ -145,8 +145,16 @@ def provision(api: HfApi, token: str, args) -> None:
 
     _step(f"hardware -> {hardware.value}",
           lambda: api.request_space_hardware(repo_id, hardware, token=token))
-    _step(f"storage -> {SpaceStorage.LARGE.value}",
-          lambda: api.request_space_storage(repo_id, SpaceStorage.LARGE, token=token))
+    # Persistent storage is OPT-IN, decided 2026-08-15: it bills monthly even
+    # while the Space is PAUSED, which fights the on-demand lifecycle. The cost
+    # of not having it is ~10 min of weight re-download per boot. If that trade
+    # flips (frequent demos), pass --storage small — 20 GB fits the ~10 GB
+    # cache; LARGE (1 TB) was this step's old hardcoded default and was never
+    # the right size.
+    if args.storage:
+        storage = SpaceStorage(args.storage)
+        _step(f"storage -> {storage.value}",
+              lambda: api.request_space_storage(repo_id, storage, token=token))
     for key, value in SPACE_VARIABLES.items():
         _step(f"variable {key}={value}",
               lambda k=key, v=value: api.add_space_variable(repo_id, k, v, token=token))
@@ -217,6 +225,10 @@ def main() -> None:
                         help="GPU flavor (default: l4x1)")
     p_prov.add_argument("--public", action="store_true",
                         help="make the Space public (default: private)")
+    p_prov.add_argument("--storage", default=None,
+                        choices=[s.value for s in SpaceStorage],
+                        help="attach persistent storage (default: none — it bills even while "
+                             "the Space is paused; 'small' fits the ~10 GB weights cache)")
     p_prov.add_argument("--no-dev-mode", dest="dev_mode", action="store_false",
                         help="skip enabling Dev Mode (which requires HF PRO)")
     p_prov.set_defaults(func=provision, dev_mode=True)
