@@ -128,6 +128,30 @@ class TestAxisBands:
         assert bands.audio.mean == pytest.approx(0.0)
 
 
+class TestStimulus:
+    def test_maps_the_probe_to_the_contract_model(self):
+        payload = {"stimulus": {"has_audio": False, "has_visual": True}}
+        stimulus = worker._stimulus(payload)
+        assert stimulus is not None
+        assert stimulus.hasAudio is False
+        assert stimulus.hasVisual is True
+
+    def test_is_none_when_the_probe_never_ran(self):
+        """A payload from before the probe existed must not grow a stimulus key."""
+        assert worker._stimulus({}) is None
+
+    def test_is_none_when_both_probes_failed(self):
+        payload = {"stimulus": {"has_audio": None, "has_visual": None}}
+        assert worker._stimulus(payload) is None
+
+    def test_one_failed_probe_still_reports_the_other(self):
+        payload = {"stimulus": {"has_audio": None, "has_visual": False}}
+        stimulus = worker._stimulus(payload)
+        assert stimulus is not None
+        assert stimulus.hasAudio is None
+        assert stimulus.hasVisual is False
+
+
 class TestStats:
     def test_renames_snake_case_to_the_contract(self):
         stats = worker._stats(result())

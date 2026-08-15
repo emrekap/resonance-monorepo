@@ -49,6 +49,12 @@ export const getAnalysisById = new Hono<AuthEnv>().get(
               timelineVisual: true,
               timelineAudio: true,
               timelineLanguage: true,
+              // Which channels the clip itself contains (ffmpeg probe +
+              // transcript). Null = unknown; the client fades the timeline
+              // line for any channel that is explicitly false.
+              stimulusHasAudio: true,
+              stimulusHasVisual: true,
+              stimulusHasSpeech: true,
               // Ordered here rather than on the client: `position` and `priority`
               // exist precisely so the reading order is the server's decision.
               axisScores: {

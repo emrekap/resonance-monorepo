@@ -139,6 +139,23 @@ class TranscriptEntry(BaseModel):
     text: str
 
 
+class Stimulus(BaseModel):
+    """What the ffmpeg probe found in the media file itself (`stimulus.py`).
+
+    The model predicts every brain network regardless of what the clip
+    contains, so these flags — not the curves — are how the result screen knows
+    which timeline lines to fade. `hasSpeech` is deliberately absent:
+    `apps/worker` derives it from the all-empty transcript, and a second source
+    could disagree with the first. Each field is independently Optional because
+    the probes run separately; None means "unknown", never "no".
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    hasAudio: Optional[bool] = None
+    hasVisual: Optional[bool] = None
+
+
 class Stats(BaseModel):
     """Dev telemetry → `analysis_results.raw_stats`. Never rendered to a creator."""
 
@@ -176,6 +193,7 @@ class AnalysisSucceeded(BaseModel):
     durationSec: Optional[float] = Field(default=None, ge=0)
     transcript: Optional[list[TranscriptEntry]] = None
     axisBands: Optional[AxisBands] = None
+    stimulus: Optional[Stimulus] = None
     stats: Stats
 
 

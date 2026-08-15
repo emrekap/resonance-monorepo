@@ -55,11 +55,13 @@ from queue_contract import (
     CorpusJob,
     CorpusSucceeded,
     Stats,
+    Stimulus,
     Timeline,
     TranscriptEntry,
     iso,
     now_iso,
 )
+from stimulus import probe_stimulus
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(message)s")
@@ -224,6 +226,22 @@ def _timeline(result: dict) -> Timeline:
     return Timeline(startSec=starts, attention=attention, **bands)
 
 
+def _stimulus(result: dict) -> Optional[Stimulus]:
+    """What the ffmpeg probe found, or None when it found nothing usable.
+
+    Both-probes-failed collapses to None rather than an all-null object so the
+    payload (`exclude_none`) carries no `stimulus` key at all — identical on
+    the wire to a payload from before the probe existed, which is the pair of
+    cases `apps/worker` should not be able to tell apart.
+    """
+    raw = result.get("stimulus") or {}
+    has_audio = raw.get("has_audio")
+    has_visual = raw.get("has_visual")
+    if has_audio is None and has_visual is None:
+        return None
+    return Stimulus(hasAudio=has_audio, hasVisual=has_visual)
+
+
 def _transcript(result: dict) -> list[TranscriptEntry]:
     """One entry per segment, silent ones included, so it stays row-aligned."""
     return [
@@ -277,11 +295,20 @@ async def _infer(modality: str, url: str, gpu: asyncio.Semaphore) -> dict:
     # whatever name the download settled on.
     with tempfile.TemporaryDirectory(prefix="resonance-") as tmp_dir:
         media_path = await asyncio.to_thread(_download, url, Path(tmp_dir), modality)
+        # Probed here because this is the only scope where the file exists —
+        # the tempdir is gone the moment this block closes. Outside the GPU
+        # semaphore on purpose: two ffmpeg passes need no card.
+        probe = await asyncio.to_thread(probe_stimulus, media_path, modality)
         async with gpu:
             preds, segments = await asyncio.to_thread(
                 engine.run_inference, modality, str(media_path)
             )
-        return engine.predictions_to_dict(preds, segments)
+        result = engine.predictions_to_dict(preds, segments)
+        result["stimulus"] = {
+            "has_audio": probe.has_audio,
+            "has_visual": probe.has_visual,
+        }
+        return result
 
 
 class AnalysisProcessor:
@@ -395,6 +422,7 @@ class AnalysisProcessor:
                 durationSec=float(result.get("duration_sec", 0.0)),
                 transcript=_transcript(result),
                 axisBands=_axis_bands(result),
+                stimulus=_stimulus(result),
                 stats=_stats(result),
             ),
             analysis_id,

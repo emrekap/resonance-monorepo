@@ -194,6 +194,28 @@ export const transcriptEntrySchema = z.object({
 export type TranscriptEntry = z.infer<typeof transcriptEntrySchema>;
 
 /**
+ * What the probe found in the media file itself — not what the model predicted.
+ *
+ * TRIBE predicts activity in every brain network regardless of what the clip
+ * contains, so a silent video still gets an "audio" curve (correctly: a
+ * viewer's auditory cortex exists). These flags are how the result screen knows
+ * to *fade* the lines a creator would otherwise misread as content quality.
+ *
+ * `hasSpeech` is deliberately absent: `apps/worker` already derives it from the
+ * all-empty transcript (the CLARITY→BETA downgrade), and a second source could
+ * disagree with the first.
+ *
+ * Each field is independently nullish — the probes run separately, and one
+ * ffmpeg failure must not discard the other's answer. Null means "unknown",
+ * which renders exactly like a payload from before this field existed.
+ */
+export const stimulusSchema = z.object({
+  hasAudio: z.boolean().nullish(),
+  hasVisual: z.boolean().nullish(),
+});
+export type Stimulus = z.infer<typeof stimulusSchema>;
+
+/**
  * Dev telemetry only — lands in `analysis_results.raw_stats`, never rendered
  * to a creator. `globalMean` is near zero by construction (the model predicts
  * z-scored fMRI), so it measures nothing about the content.
@@ -222,6 +244,7 @@ export const analysisSucceededSchema = z.object({
   durationSec: z.number().min(0).nullish(),
   transcript: z.array(transcriptEntrySchema).nullish(),
   axisBands: axisBandsSchema.nullish(),
+  stimulus: stimulusSchema.nullish(),
   stats: statsSchema,
 });
 export type AnalysisSucceeded = z.infer<typeof analysisSucceededSchema>;

@@ -134,6 +134,28 @@ class TestSucceeded:
         returned = await processor(fake_job(), token="t")
         assert set(returned) == {"analysisId", "attempt", "durationMs"}
 
+    async def test_publishes_what_the_stimulus_probe_found(
+        self, processor, fake_job, spy_results_queue, succeeding, monkeypatch
+    ):
+        from stimulus import StimulusProbe
+
+        monkeypatch.setattr(
+            worker, "probe_stimulus", lambda path, modality: StimulusProbe(False, True)
+        )
+        await processor(fake_job(), token="t")
+        payload = spy_results_queue.named(RESULT_JOB_SUCCEEDED)
+        assert payload["stimulus"] == {"hasAudio": False, "hasVisual": True}
+
+    async def test_a_failed_probe_is_omitted_not_fatal(
+        self, processor, fake_job, spy_results_queue, succeeding
+    ):
+        """The fake download writes one junk byte, so the real probe fails on
+        every path — the job must still succeed, with no stimulus key at all
+        (`exclude_none`)."""
+        await processor(fake_job(), token="t")
+        payload = spy_results_queue.named(RESULT_JOB_SUCCEEDED)
+        assert "stimulus" not in payload
+
 
 class TestFailed:
     async def test_publishes_failed_and_re_raises(

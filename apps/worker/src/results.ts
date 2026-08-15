@@ -15,6 +15,7 @@ import {
 } from '@repo/queue';
 import { generateRecommendations, insightsEnabled } from './insights';
 import { scoreAnalysis } from './scoring';
+import { stimulusColumns } from './stimulus';
 
 /**
  * The `analysis-results` consumer: turns what `apps/ml` reports into rows.
@@ -103,6 +104,7 @@ async function onSucceeded(result: AnalysisSucceeded): Promise<void> {
   const finishedAt = new Date(result.finishedAt);
   const timeline = timelineColumns(result.timeline);
   const bands = result.axisBands ?? null;
+  const stimulus = stimulusColumns(result);
 
   await prismaService.$transaction(async (tx) => {
     await lockAnalysis(tx, result.analysisId);
@@ -137,7 +139,10 @@ async function onSucceeded(result: AnalysisSucceeded): Promise<void> {
       bands: bands ?? EMPTY_BANDS,
       history,
       nSegments: result.timeline.startSec.length,
-      hasSpeech: (result.transcript ?? []).some((entry) => entry.text.trim().length > 0),
+      // The one derivation of "has speech" — the same value lands in
+      // `stimulus_has_speech`, so the CLARITY downgrade and the faded language
+      // line can never disagree. Unknown scores as no-speech, as it always has.
+      hasSpeech: stimulus.stimulusHasSpeech ?? false,
     });
 
     const rawStats: Prisma.InputJsonObject = {
@@ -158,6 +163,7 @@ async function onSucceeded(result: AnalysisSucceeded): Promise<void> {
         analysisId: result.analysisId,
         rawStats,
         ...timelineData(timeline),
+        ...stimulus,
         resonanceScore: scored.resonanceScore,
         percentileInChannel: scored.percentileInChannel,
         confidence: scored.confidence,
@@ -165,6 +171,7 @@ async function onSucceeded(result: AnalysisSucceeded): Promise<void> {
       update: {
         rawStats,
         ...timelineData(timeline),
+        ...stimulus,
         resonanceScore: scored.resonanceScore,
         percentileInChannel: scored.percentileInChannel,
         confidence: scored.confidence,

@@ -274,6 +274,15 @@ model AnalysisResult {
   timelineVisual      Float[]  @map("timeline_visual")
   timelineAudio       Float[]  @map("timeline_audio")
   timelineLanguage    Float[]  @map("timeline_language")
+  /// What the clip itself contains — not what the model predicted. The model
+  /// fills every band regardless of stimulus, so these flags are how the result
+  /// screen knows which timeline lines to fade (a silent clip's "audio" curve
+  /// would otherwise read as content quality). audio/visual come from the
+  /// ffmpeg probe in apps/ml; speech is derived from the transcript in
+  /// apps/worker. Null = unknown (row predates the probe, or it failed).
+  stimulusHasAudio    Boolean? @map("stimulus_has_audio")
+  stimulusHasVisual   Boolean? @map("stimulus_has_visual")
+  stimulusHasSpeech   Boolean? @map("stimulus_has_speech")
   /// Dev telemetry (global_mean/std/min/max). Never rendered to a creator.
   rawStats            Json?    @map("raw_stats")
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)

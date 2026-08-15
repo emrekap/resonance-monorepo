@@ -87,6 +87,13 @@ class TestAnalysisSucceeded:
         # Silent segments are kept, or every later caption slides onto the wrong moment.
         assert any(entry.text == "" for entry in parsed.transcript)
 
+    def test_carries_the_stimulus_block(self, payload):
+        """`hasAudio`/`hasVisual` drive the muted lines on the result screen."""
+        parsed = AnalysisSucceeded(**payload)
+        assert parsed.stimulus is not None
+        assert parsed.stimulus.hasAudio is True
+        assert parsed.stimulus.hasVisual is True
+
     def test_unset_optional_fields_serialise_as_null(self, payload):
         """The reason the zod contract uses .nullish() rather than .optional().
 
@@ -96,12 +103,13 @@ class TestAnalysisSucceeded:
         minimal = {
             key: value
             for key, value in payload.items()
-            if key not in {"durationSec", "transcript", "axisBands"}
+            if key not in {"durationSec", "transcript", "axisBands", "stimulus"}
         }
         dumped = AnalysisSucceeded(**minimal).model_dump(mode="json")
         assert dumped["durationSec"] is None
         assert dumped["transcript"] is None
         assert dumped["axisBands"] is None
+        assert dumped["stimulus"] is None
 
     def test_rejects_a_negative_duration(self, payload):
         with pytest.raises(Exception):

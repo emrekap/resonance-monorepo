@@ -64,6 +64,22 @@ describe('analysis.succeeded — the Pydantic payload', () => {
     expect(parsed.transcript?.some((entry) => entry.text === '')).toBe(true);
   });
 
+  test('carries the stimulus block the timeline muting reads', () => {
+    const parsed = analysisSucceededSchema.parse(fixture);
+    expect(parsed.stimulus).toEqual({ hasAudio: true, hasVisual: true });
+  });
+
+  test('accepts a stimulus whose probes individually failed', () => {
+    // Each probe reports independently; one ffmpeg failure must not discard
+    // the other's answer.
+    const parsed = analysisSucceededSchema.parse({
+      ...fixture,
+      stimulus: { hasAudio: false, hasVisual: null },
+    });
+    expect(parsed.stimulus?.hasAudio).toBe(false);
+    expect(parsed.stimulus?.hasVisual).toBeNull();
+  });
+
   test('accepts null for the fields Pydantic leaves unset', () => {
     // This is the exact shape a `None` on the Python side serialises to.
     const parsed = analysisSucceededSchema.parse({
@@ -71,9 +87,11 @@ describe('analysis.succeeded — the Pydantic payload', () => {
       durationSec: null,
       transcript: null,
       axisBands: null,
+      stimulus: null,
       timeline: { ...fixture.timeline, visual: null, audio: null, language: null },
     });
     expect(parsed.axisBands).toBeNull();
+    expect(parsed.stimulus).toBeNull();
     expect(parsed.timeline.visual).toBeNull();
   });
 

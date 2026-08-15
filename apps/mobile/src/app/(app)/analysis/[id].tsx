@@ -4,7 +4,14 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
-import { AttentionTimeline, formatClock } from '@/components/analysis/attention-timeline';
+import Ionicons from '@expo/vector-icons/Ionicons';
+
+import { AttentionExplainer } from '@/components/analysis/attention-explainer';
+import {
+  AttentionTimeline,
+  formatClock,
+  mutedBands,
+} from '@/components/analysis/attention-timeline';
 import { Badge, Button, Card, Meter, Score, Screen, Text } from '@/components/ui';
 import { useTheme } from '@/design';
 import { api } from '@/lib/api';
@@ -48,6 +55,7 @@ export default function AnalysisScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [focusSec, setFocusSec] = useState<number | null>(null);
+  const [explainerOpen, setExplainerOpen] = useState(false);
 
   const job = useQuery({
     queryKey: analysisKey(id),
@@ -121,9 +129,23 @@ export default function AnalysisScreen() {
 
           {succeeded && hasTimeline && result ? (
             <Card style={{ gap: theme.space.md }}>
-              <Text variant="eyebrow" tone="muted">
-                Attention over time
-              </Text>
+              <View style={styles.axisRow}>
+                <Text variant="eyebrow" tone="muted">
+                  Attention over time
+                </Text>
+                <Pressable
+                  onPress={() => setExplainerOpen(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="What do these lines mean?"
+                  hitSlop={theme.space.sm}
+                >
+                  <Ionicons
+                    name="information-circle-outline"
+                    size={18}
+                    color={theme.colors.textSecondary}
+                  />
+                </Pressable>
+              </View>
               <AttentionTimeline
                 timeline={{
                   startSec: result.timelineStartSec,
@@ -131,8 +153,10 @@ export default function AnalysisScreen() {
                   audio: result.timelineAudio,
                   language: result.timelineLanguage,
                 }}
+                muted={mutedBands(result)}
                 focusSec={focusSec}
               />
+              <AttentionExplainer visible={explainerOpen} onClose={() => setExplainerOpen(false)} />
             </Card>
           ) : null}
 

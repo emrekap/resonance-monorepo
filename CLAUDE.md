@@ -244,6 +244,20 @@ cross-stimulus double dissociation on the deployed checkpoint
 findings in `docs/resonance-model-design.md` §2e, notably: the encoder scores stimulus typicality,
 not physiology, so axis numbers for far-out-of-distribution content are not meaningful).
 
+**Stimulus flags + muted timeline lines (done, not yet seen on a device):** the model predicts
+every brain network no matter what a clip contains, so a silent video still gets an "audio" curve —
+correct, but read as content quality by anyone. `apps/ml/stimulus.py` probes the downloaded file
+with ffmpeg (audio stream + volumedetect for `hasAudio`; signalstats mean **and peak** luma for
+`hasVisual`, so captions-on-black still count as visual); `hasSpeech` is derived once in
+`apps/worker/src/stimulus.ts` from the transcript (the same value feeds the CLARITY→BETA downgrade,
+so the two can never disagree). Flags cross the queue as a nullish `stimulus` block, land in
+`analysis_results.stimulus_has_{audio,visual,speech}` (null = unknown = render as before), and ride
+`GET /analyze/:id`. Mobile fades a muted line (`bandNeutral`, still drawn), excludes muted bands
+from peak/dip marker derivation (`timeline-math.ts` — previously a silent clip's auditory noise
+could place the green "peak"), and the timeline card grew an ⓘ modal explaining that the three
+lines are predicted brain-network responses, not grades of footage/sound. Probe failure degrades to
+null and can never fail a job. Rows written before this change have null flags and render untouched.
+
 **Validation harness (done, synthetic-only):** `research/` implements the pre-registered analysis
 end to end — snapshot contract, synthetic ground-truth worlds, splits with the prereg's leakage
 rules as runtime assertions, the B0–B4 ladder, bootstrap + paired Wilcoxon, three negative controls

@@ -5,6 +5,15 @@ import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { Text } from '@/components/ui';
 import { useTheme } from '@/design';
 
+import {
+  BANDS,
+  deriveMarkers,
+  buildPath,
+  formatClock,
+  type MutedBands,
+  type TimelineBands,
+} from './timeline-math';
+
 /**
  * The attention timeline — the hero of the result screen.
  *
@@ -17,119 +26,48 @@ import { useTheme } from '@/design';
  * Drawn with inline SVG rather than a charting library: it is four paths and two
  * markers, and `react-native-svg` is already a dependency. A chart library would
  * be a bundle and an API to fight for a shape this specific.
- */
-
-/**
- * Deliberately no `attention` field, though the API returns one.
  *
- * That array is the brain-wide mean, and independent work (arXiv 2607.01400,
- * cited in docs/resonance-model-design.md §0) shows it does *not* predict
- * engagement — the signal is in specific networks. It stays in the database as
- * telemetry; drawing it would put the one debunked curve on the hero chart.
+ * A **muted** band (the clip does not contain that channel — a silent video's
+ * audio line, a black screen's visual line) is still drawn, in the neutral band
+ * colour at reduced opacity, with a note in the legend. Faded rather than
+ * hidden: the model genuinely predicted the curve, but there is nothing in the
+ * content behind it, and hiding it would raise "where did my audio line go?"
+ * where fading answers the question. See `timeline-math.ts` for what mutes.
  */
-export type TimelineBands = {
-  startSec: readonly number[];
-  visual: readonly number[];
-  audio: readonly number[];
-  language: readonly number[];
-};
 
-export type TimelineMarker = {
-  kind: 'peak' | 'dip';
-  startSec: number;
-};
+// The deliberate omission of `attention` from TimelineBands, though the API
+// returns one: that array is the brain-wide mean, and independent work
+// (arXiv 2607.01400, cited in docs/resonance-model-design.md §0) shows it does
+// *not* predict engagement — the signal is in specific networks. It stays in
+// the database as telemetry; drawing it would put the one debunked curve on
+// the hero chart.
+export type { MutedBands, TimelineBands } from './timeline-math';
+export { formatClock, mutedBands } from './timeline-math';
+
+const NO_MUTING: MutedBands = { visual: false, audio: false, language: false };
 
 export interface AttentionTimelineProps {
   timeline: TimelineBands;
+  /** Which lines to fade — from `mutedBands(result)`. Defaults to none. */
+  muted?: MutedBands;
   /** Highlighted moment, set when a recommendation row is tapped. */
   focusSec?: number | null;
   height?: number;
 }
 
-/**
- * The strongest peak and deepest dip in the combined response.
- *
- * Derived here rather than passed in. The screen only knows which moments the
- * recommendations point at, and it cannot tell a peak from a dip — an earlier
- * version mapped every recommendation to `kind: 'dip'`, so a moment the model
- * praised was drawn in warning colour. The curve is right here; classifying it
- * is three lines and cannot disagree with what is on screen.
- *
- * `apps/worker` runs its own marker detection for the prompt. The two need not
- * agree: that one decides what Claude explains, this one decides what a creator
- * sees, and both read the same curve.
- */
-function deriveMarkers(timeline: TimelineBands): TimelineMarker[] {
-  const combined = timeline.startSec.map((startSec, index) => ({
-    startSec,
-    value:
-      (timeline.visual[index] ?? 0) +
-      (timeline.audio[index] ?? 0) +
-      (timeline.language[index] ?? 0),
-  }));
-  if (combined.length < 3) return [];
-
-  const sorted = [...combined].sort((a, b) => a.value - b.value);
-  const dip = sorted[0];
-  const peak = sorted[sorted.length - 1];
-  if (!dip || !peak || dip.startSec === peak.startSec) return [];
-
-  return [
-    { kind: 'peak' as const, startSec: peak.startSec },
-    { kind: 'dip' as const, startSec: dip.startSec },
-  ].sort((a, b) => a.startSec - b.startSec);
-}
-
-const BANDS = [
-  { key: 'visual', label: 'Visual', token: 'bandVisual' },
-  { key: 'audio', label: 'Audio', token: 'bandAudio' },
-  { key: 'language', label: 'Language', token: 'bandLanguage' },
-] as const;
-
-/** `73.5` -> `1:13`. */
-export function formatClock(seconds: number): string {
-  const whole = Math.max(0, Math.floor(seconds));
-  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
-}
-
-/**
- * Build an SVG path for one band.
- *
- * All three bands share one y-scale, taken across all of them together, so their
- * relative heights are comparable. Scaling each band to its own range would make
- * a flat audio track look as dynamic as a busy visual one.
- */
-function buildPath(
-  values: readonly number[],
-  xs: readonly number[],
-  domain: { min: number; max: number },
-  width: number,
-  height: number,
-): string {
-  if (values.length === 0 || xs.length === 0) return '';
-  const spanX = Math.max(1e-6, (xs[xs.length - 1] ?? 0) - (xs[0] ?? 0));
-  const spanY = Math.max(1e-6, domain.max - domain.min);
-
-  return values
-    .map((value, index) => {
-      const x = (((xs[index] ?? 0) - (xs[0] ?? 0)) / spanX) * width;
-      // SVG y grows downward; invert so a higher response draws higher.
-      const y = height - ((value - domain.min) / spanY) * height;
-      return `${index === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(' ');
-}
-
 export function AttentionTimeline({
   timeline,
+  muted = NO_MUTING,
   focusSec = null,
   height = 132,
 }: AttentionTimelineProps) {
   const theme = useTheme();
   const [width, setWidth] = useState(0);
 
-  const markers = useMemo(() => deriveMarkers(timeline), [timeline]);
+  const markers = useMemo(() => deriveMarkers(timeline, muted), [timeline, muted]);
 
+  // Muted bands stay inside the shared y-domain: they are drawn, so they must
+  // fit, and rescaling without them would quietly exaggerate the live lines.
   const domain = useMemo(() => {
     const all = [...timeline.visual, ...timeline.audio, ...timeline.language];
     if (all.length === 0) return { min: 0, max: 1 };
@@ -139,6 +77,12 @@ export function AttentionTimeline({
     // the line renders down the middle instead of at an edge.
     return max - min < 1e-6 ? { min: min - 0.5, max: max + 0.5 } : { min, max };
   }, [timeline]);
+
+  // Muted lines first, so every live line draws on top of them.
+  const drawOrder = useMemo(
+    () => [...BANDS].sort((a, b) => Number(muted[b.key]) - Number(muted[a.key])),
+    [muted],
+  );
 
   const xs = timeline.startSec;
   const firstSec = xs[0] ?? 0;
@@ -180,15 +124,16 @@ export function AttentionTimeline({
               />
             ) : null}
 
-            {BANDS.map((band) => (
+            {drawOrder.map((band) => (
               <Path
                 key={band.key}
                 d={buildPath(timeline[band.key], xs, domain, width, height)}
-                stroke={theme.colors[band.token]}
+                stroke={muted[band.key] ? theme.colors.bandNeutral : theme.colors[band.token]}
                 strokeWidth={2}
                 strokeLinejoin="round"
                 strokeLinecap="round"
                 fill="none"
+                opacity={muted[band.key] ? 0.45 : 1}
               />
             ))}
           </Svg>
@@ -211,11 +156,25 @@ export function AttentionTimeline({
             style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space.xs }}
           >
             <Svg width={10} height={10}>
-              <Circle cx={5} cy={5} r={4} fill={theme.colors[band.token]} />
+              <Circle
+                cx={5}
+                cy={5}
+                r={4}
+                fill={muted[band.key] ? theme.colors.bandNeutral : theme.colors[band.token]}
+                opacity={muted[band.key] ? 0.6 : 1}
+              />
             </Svg>
+            {/* Tone stays `secondary` even when muted: `muted` text is gated to
+                large/incidental variants for contrast (see ui/text.tsx), and the
+                gray dot + caption already carry the state. */}
             <Text variant="label" tone="secondary">
               {band.label}
             </Text>
+            {muted[band.key] ? (
+              <Text variant="caption" tone="muted">
+                · none detected
+              </Text>
+            ) : null}
           </View>
         ))}
       </View>
