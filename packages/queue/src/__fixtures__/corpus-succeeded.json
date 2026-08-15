@@ -1,0 +1,38 @@
+{
+  "corpusPostId": "0199b2f3-4c5d-7e6f-8a01-2b3c4d5e6f70",
+  "clipId": "0199b2f3-4c5d-7e6f-8a01-2b3c4d5e6f71",
+  "attempt": 1,
+  "queueJobId": "0199b2f3-4c5d-7e6f-8a01-2b3c4d5e6f70:1",
+  "device": "cuda",
+  "startedAt": "2026-09-01T10:00:00.000Z",
+  "finishedAt": "2026-09-01T10:00:31.000Z",
+  "durationMs": 31000,
+  "timeline": {
+    "startSec": [0.0, 1.49, 2.98],
+    "attention": [0.014, -0.002, 0.028],
+    "visual": [0.24, -0.06, 0.41],
+    "audio": [0.04, 0.13, -0.03],
+    "language": [-0.11, 0.03, 0.07]
+  },
+  "durationSec": 4.47,
+  "transcript": [
+    { "startSec": 0.0, "text": "watch what happens" },
+    { "startSec": 1.49, "text": "" },
+    { "startSec": 2.98, "text": "every time" }
+  ],
+  "axisBands": {
+    "visual": { "mean": 0.02, "std": 0.19, "peak": 0.41 },
+    "audio": { "mean": 0.01, "std": 0.08, "peak": 0.13 },
+    "language": { "mean": -0.01, "std": 0.07, "peak": 0.07 },
+    "emotional": { "mean": 0.0, "std": 0.05, "peak": 0.09 },
+    "memorability": { "mean": 0.01, "std": 0.06, "peak": 0.12 }
+  },
+  "stats": {
+    "globalMean": 0.001,
+    "globalStd": 0.42,
+    "globalMin": -1.8,
+    "globalMax": 2.1,
+    "nTimesteps": 3,
+    "nVertices": 20484
+  }
+}

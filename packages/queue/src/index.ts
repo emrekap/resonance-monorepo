@@ -24,6 +24,14 @@ export {
   analysisStartedSchema,
   analysisSucceededSchema,
   analysisFailedSchema,
+  statsSchema,
+  CORPUS_QUEUE,
+  CORPUS_RESULTS_QUEUE,
+  CORPUS_JOB,
+  CORPUS_RESULT_JOB,
+  corpusJobSchema,
+  corpusSucceededSchema,
+  corpusFailedSchema,
 } from './contract.ts';
 
 export type {
@@ -37,4 +45,9 @@ export type {
   AnalysisStarted,
   AnalysisSucceeded,
   AnalysisFailed,
+  Stats,
+  CorpusResultJobName,
+  CorpusJob,
+  CorpusSucceeded,
+  CorpusFailed,
 } from './contract.ts';

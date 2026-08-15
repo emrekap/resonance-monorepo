@@ -193,6 +193,25 @@ export const transcriptEntrySchema = z.object({
 });
 export type TranscriptEntry = z.infer<typeof transcriptEntrySchema>;
 
+/**
+ * Dev telemetry only — lands in `analysis_results.raw_stats`, never rendered
+ * to a creator. `globalMean` is near zero by construction (the model predicts
+ * z-scored fMRI), so it measures nothing about the content.
+ *
+ * Named rather than inline because the corpus contract carries the identical
+ * block: one definition means one place to change when the model reports
+ * something new.
+ */
+export const statsSchema = z.object({
+  globalMean: z.number(),
+  globalStd: z.number(),
+  globalMin: z.number(),
+  globalMax: z.number(),
+  nTimesteps: z.int().min(0),
+  nVertices: z.int().min(0),
+});
+export type Stats = z.infer<typeof statsSchema>;
+
 export const analysisSucceededSchema = z.object({
   ...runIdentity,
   startedAt: z.iso.datetime(),
@@ -203,19 +222,7 @@ export const analysisSucceededSchema = z.object({
   durationSec: z.number().min(0).nullish(),
   transcript: z.array(transcriptEntrySchema).nullish(),
   axisBands: axisBandsSchema.nullish(),
-  /**
-   * Dev telemetry only — lands in `analysis_results.raw_stats`, never rendered
-   * to a creator. `globalMean` is near zero by construction (the model predicts
-   * z-scored fMRI), so it measures nothing about the content.
-   */
-  stats: z.object({
-    globalMean: z.number(),
-    globalStd: z.number(),
-    globalMin: z.number(),
-    globalMax: z.number(),
-    nTimesteps: z.int().min(0),
-    nVertices: z.int().min(0),
-  }),
+  stats: statsSchema,
 });
 export type AnalysisSucceeded = z.infer<typeof analysisSucceededSchema>;
 
@@ -233,3 +240,108 @@ export const analysisFailedSchema = z.object({
   retryable: z.boolean(),
 });
 export type AnalysisFailed = z.infer<typeof analysisFailedSchema>;
+
+// ─── poller → ml → poller (the research corpus) ──────────────────────────────
+
+/**
+ * A symmetric second pair, mirroring the analysis path rather than borrowing
+ * from it: `[corpus]` in, `[corpus-results]` out, persisted by `apps/poller`.
+ *
+ * ```text
+ *   apps/poller ──add──▶ [corpus] ──▶ apps/ml ──▶ [corpus-results] ──▶ apps/poller
+ *                                    same engine.py                        │
+ *                                                                          ▼
+ *                                                                   corpus.scores
+ * ```
+ *
+ * Two queues rather than reusing `analysis`, because corpus results land in
+ * `corpus.scores` rather than `analysis_results` — so `apps/worker` needs no
+ * changes at all, and a corpus backfill cannot starve or delay a customer job
+ * in the queue.
+ *
+ * **The one thing that must stay shared is `engine.py`.** A separate queue is
+ * not a separate inference path. If corpus features were computed by different
+ * code than product features, the backtest would silently stop describing the
+ * product, and no test would catch it. `apps/ml` consumes both queues and routes
+ * both to the same engine; only the payload and result contracts differ.
+ *
+ * Corpus jobs skip the Anthropic insights step — recommendations are
+ * creator-facing output, and 1,600 of them is spend on text nobody reads. That
+ * is enforced by `apps/poller` simply never calling it; there is no field here
+ * to turn it off, because there is no path that would turn it on.
+ */
+
+/** poller → ml. One job per acquired clip. */
+export const CORPUS_QUEUE = 'corpus';
+
+/** ml → poller. Outcome of the job above. */
+export const CORPUS_RESULTS_QUEUE = 'corpus-results';
+
+/** The only job name on {@link CORPUS_QUEUE}. */
+export const CORPUS_JOB = 'corpus.score';
+
+/**
+ * Job names on {@link CORPUS_RESULTS_QUEUE}.
+ *
+ * There is no `started`, deliberately: no creator is watching a status column
+ * and there is no row to walk from QUEUED to PROCESSING, so the event would
+ * write nothing.
+ */
+export const CORPUS_RESULT_JOB = {
+  succeeded: 'corpus.succeeded',
+  failed: 'corpus.failed',
+} as const;
+
+export type CorpusResultJobName = (typeof CORPUS_RESULT_JOB)[keyof typeof CORPUS_RESULT_JOB];
+
+export const corpusJobSchema = z.object({
+  /** `corpus.posts.id`. */
+  corpusPostId: z.uuid(),
+  /** `corpus.clips.id` — a corpus job without an acquired clip has nothing to run. */
+  clipId: z.uuid(),
+  modality: modalitySchema,
+  media: z.object({
+    /** Short-lived signed URL to the clip in the private bucket. */
+    url: z.url(),
+  }),
+});
+export type CorpusJob = z.infer<typeof corpusJobSchema>;
+
+/** Fields every corpus outcome carries. No workspace and no analysis — there is no tenant. */
+const corpusRunIdentity = {
+  corpusPostId: z.uuid(),
+  clipId: z.uuid(),
+  attempt: z.int().min(1),
+  queueJobId: z.string(),
+  device: z.string().nullish(),
+};
+
+export const corpusSucceededSchema = z.object({
+  ...corpusRunIdentity,
+  startedAt: z.iso.datetime(),
+  finishedAt: z.iso.datetime(),
+  durationMs: z.int().min(0),
+  timeline: timelineSchema,
+  durationSec: z.number().min(0).nullish(),
+  transcript: z.array(transcriptEntrySchema).nullish(),
+  /**
+   * REQUIRED here, unlike `analysisSucceededSchema`.
+   *
+   * A corpus row exists only to yield a composite, which is a reduction over
+   * these bands — so a score without them is a row that can never be ranked.
+   * Rejecting it at the boundary is better than writing a null the extract
+   * would have to filter, silently shrinking N for a reason nobody recorded.
+   */
+  axisBands: axisBandsSchema,
+  stats: statsSchema,
+});
+export type CorpusSucceeded = z.infer<typeof corpusSucceededSchema>;
+
+export const corpusFailedSchema = z.object({
+  ...corpusRunIdentity,
+  startedAt: z.iso.datetime(),
+  finishedAt: z.iso.datetime(),
+  error: z.string(),
+  retryable: z.boolean(),
+});
+export type CorpusFailed = z.infer<typeof corpusFailedSchema>;
