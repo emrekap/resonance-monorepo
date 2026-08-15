@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "turbo run dev",
+    "dev": "turbo run dev tunnel",
     "prune": "turbo prune --docker",
     "build": "turbo run build",
     "lint": "turbo run lint",
@@ -19,7 +19,7 @@
     "clean": "turbo run clean",
     "docker:local": "bun run --cwd=infra/docker docker compose up -d",
     "docker:local:tools": "bun run --cwd=infra/docker docker compose --profile tools up -d",
-    "ngrok": "ngrok http --url=tashina-unstemmed-shonna.ngrok-free.dev 3000",
+    "tunnel": "ngrok http --url=tashina-unstemmed-shonna.ngrok-free.dev 3000 --log=stdout --log-level=warn",
     "db:deploy": "bun run --cwd=packages/db db:deploy",
     "ml:deploy": "cd apps/ml && python manage_space.py deploy"
   },
