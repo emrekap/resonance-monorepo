@@ -25,7 +25,6 @@
 # `id` is the channelId (UC + 22 characters) from youtube.com/channel/<id> —
 # NOT the @handle, which resolves to a different traversal.
 #
-# THIS FILE IS INTENTIONALLY EMPTY AND WILL FAIL VALIDATION UNTIL CURATED.
 # `loadSeeds()` throws "the sampling frame is empty" rather than polling
 # nothing quietly, so the poller cannot start against a frame nobody chose.
 #
@@ -34,6 +33,35 @@
 #     niche: cooking
 #     tier: mid
 #     rationale: "Posts 3-5 Shorts a week with visibly variable reach; not a repost account."
+#
+# ─── What the first real polls taught us ──────────────────────────────────────
+#
+# The <=30 s rule is FAR stricter than "posts Shorts", and it is the binding
+# constraint on frame size. Measured yields from one page of 50 recent uploads:
+#
+#   Mrwhosetheboss  2%     Mark Rober      4%     Doctor Mike     4%
+#   Joshua Weissman 12%    Ayhan Sicimoglu 15%    Explored Travel 42%
+#   Zach King       72%    Ryan HD         96%
+#
+# Established long-form channels post 30-60 s Shorts and mostly fail the rule;
+# Shorts-NATIVE creators pass it. So screen a candidate on its count of clips
+# UNDER 30 SECONDS, never on its subscriber count or its Shorts tab.
+#
+# Two traps worth naming, both of which look fine on a channel page:
+#   * Cooking With Lynja screens at 28% yield and 12x spread — and has not
+#     posted a qualifying clip in 948 DAYS. Dead channels mature no labels.
+#   * Steve Mould and Mrwhosetheboss both score a 1.0x view spread across
+#     their qualifying clips. Uniform reach means no ordering to rank, which
+#     is the one defect that makes a channel worth exactly nothing here.
+#
+# The `tier` values below read: nano <10k, micro 10k-100k, mid 100k-1M,
+# large >1M.
+#
+# KNOWN BIAS, recorded rather than left implicit (criterion 5): the frame is
+# currently 2 mid + 5 large and has NO nano or micro channels, so it cannot yet
+# say anything about how the composite behaves at small audience sizes. Fixing
+# that needs hand-picked small channels — they are not findable from memory and
+# `search.list` costs 100 quota units against playlistItems.list's 1.
 
 version: 1
 channels:
@@ -42,8 +70,38 @@ channels:
     niche: travel
     tier: mid
     rationale: 'Posts 3-5 Shorts a week; recent view counts spread 10x, so there is an ordering to rank.'
-  - id: UCJYn7vc5OX5MnCepcCXHdlA
+  - id: UCND8226Fwoc5OJJRhpeHOSw
     handle: '@ayhansicimoglu'
     niche: food
     tier: mid
-    rationale: 'Latin music, travel, culture, cuisine, history, and sailing adventures across Europe and beyond'
+    rationale: 'Weakest entry in the frame: only 6 of 40 recent uploads clear <=30s. Kept for niche spread; drop it if it stays under the 20-post floor.'
+
+  # The five below were screened against the Data API before being added, not
+  # picked from reputation: each figure is measured over one page of 50 recent
+  # uploads. `spread` is p90/p10 views across the qualifying clips — criterion
+  # 1, the one no automated discovery can check.
+  - id: UCq8DICunczvLuJJq414110A
+    handle: '@zachking'
+    niche: magic
+    tier: large
+    rationale: '36/50 recent uploads clear <=30s with a 20.7x view spread; posted 9 days ago, original VFX rather than reposts.'
+  - id: UCb8vrqP8Z7Oz9ZTYvUtjUHQ
+    handle: '@daniellabelle'
+    niche: comedy
+    tier: large
+    rationale: '17/50 clear <=30s and their views spread 169.8x — the widest ordering in the frame. Posted 2 days ago, all original physical comedy.'
+  - id: UClFN9LShD_Pv0wnSeUKbUZw
+    handle: '@thatlittlepuff'
+    niche: pets
+    tier: large
+    rationale: '19/50 clear <=30s with a 162.3x view spread; posts several times a week, single-character original format.'
+  - id: UC68zG933W7D9V9H9TLXBPZQ
+    handle: '@ryanhdlombard'
+    niche: audio
+    tier: large
+    rationale: '48/50 clear <=30s — the highest yield screened — with a 6.7x spread and a clip posted today. Sound-design niche nothing else here covers.'
+  - id: UCWiXzvPDb5YqG7W0mr2TmlA
+    handle: '@dylanlemay'
+    niche: dessert
+    tier: large
+    rationale: '17/50 clear <=30s with a 58.2x spread, posted 5 days ago. Smallest of the five at 5.8M subs, so it carries what tier range the frame has.'
