@@ -66,6 +66,15 @@ resource "aws_ssm_parameter" "app_service_database_url" {
   value = var.app_service_database_url
 }
 
+# apps/poller. Unconditional, unlike anthropic_api_key below: there is no
+# degraded mode for a poller with no Data API key, so an absent value should
+# fail at apply time rather than produce a task that starts and does nothing.
+resource "aws_ssm_parameter" "youtube_api_key" {
+  name  = "${local.ssm_prefix}/YOUTUBE_API_KEY"
+  type  = "SecureString"
+  value = var.youtube_api_key
+}
+
 
 # Not created at all when empty, and NOT wired into the worker's secrets block
 # (ecs.tf) in that case — apps/worker/src/insights.ts's insightsEnabled() is

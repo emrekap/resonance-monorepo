@@ -22,3 +22,9 @@ google_client_secret       = "<client-secret>"
 oauth_state_secret         = "<openssl rand -base64 32>"
 token_encryption_key       = "<openssl rand -base64 32, must decode to 32 bytes>"
 anthropic_api_key = ""
+
+# apps/poller. A plain YouTube Data API v3 key (NOT the OAuth client above) from
+# a Google Cloud project with that API enabled, restricted to it. Required —
+# there is no degraded mode for a poller that cannot call the Data API.
+# REDIS_URL and APP_SERVICE_DATABASE_URL above are reused as-is.
+youtube_api_key = "<google-cloud-api-key>"

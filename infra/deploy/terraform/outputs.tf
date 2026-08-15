@@ -6,6 +6,10 @@ output "ecr_worker_repository_url" {
   value = aws_ecr_repository.worker.repository_url
 }
 
+output "ecr_poller_repository_url" {
+  value = aws_ecr_repository.poller.repository_url
+}
+
 output "ecs_cluster_name" {
   value = aws_ecs_cluster.this.name
 }
@@ -18,12 +22,20 @@ output "ecs_worker_service_name" {
   value = aws_ecs_service.worker.name
 }
 
+output "ecs_poller_service_name" {
+  value = aws_ecs_service.poller.name
+}
+
 output "cloudwatch_log_group_api" {
   value = aws_cloudwatch_log_group.api.name
 }
 
 output "cloudwatch_log_group_worker" {
   value = aws_cloudwatch_log_group.worker.name
+}
+
+output "cloudwatch_log_group_poller" {
+  value = aws_cloudwatch_log_group.poller.name
 }
 
 output "aws_region" {

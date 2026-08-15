@@ -28,15 +28,19 @@ IAM_POLICY_FILE := $(TF_DIR)/local-aws-cli-policy.json
 CLUSTER          = $(shell cd $(TF_DIR) && terraform output -raw ecs_cluster_name)
 API_SERVICE      = $(shell cd $(TF_DIR) && terraform output -raw ecs_api_service_name)
 WORKER_SERVICE   = $(shell cd $(TF_DIR) && terraform output -raw ecs_worker_service_name)
+POLLER_SERVICE   = $(shell cd $(TF_DIR) && terraform output -raw ecs_poller_service_name)
 ECR_API          = $(shell cd $(TF_DIR) && terraform output -raw ecr_api_repository_url)
 ECR_WORKER       = $(shell cd $(TF_DIR) && terraform output -raw ecr_worker_repository_url)
+ECR_POLLER       = $(shell cd $(TF_DIR) && terraform output -raw ecr_poller_repository_url)
 LOG_GROUP_API    = $(shell cd $(TF_DIR) && terraform output -raw cloudwatch_log_group_api)
 LOG_GROUP_WORKER = $(shell cd $(TF_DIR) && terraform output -raw cloudwatch_log_group_worker)
+LOG_GROUP_POLLER = $(shell cd $(TF_DIR) && terraform output -raw cloudwatch_log_group_poller)
 
 .PHONY: help tf-init tf-plan tf-apply iam-push-policy \
-	build-api build-worker push-api push-worker deploy-api deploy-worker \
-	start stop pause restart status ip logs-api logs-worker redis-check \
-	ml-pause ml-restart ml-status
+	build-api build-worker build-poller push-api push-worker push-poller \
+	deploy-api deploy-worker deploy-poller \
+	start stop pause restart status ip logs-api logs-worker logs-poller \
+	redis-check ml-pause ml-restart ml-status
 
 help:
 	@echo "Terraform (one-time / rare):"
@@ -44,17 +48,22 @@ help:
 	@echo "  make iam-push-policy             sync $(IAM_POLICY_FILE) to the $(IAM_USER) inline policy"
 	@echo ""
 	@echo "Images:"
-	@echo "  make build-api build-worker      docker build only"
-	@echo "  make push-api push-worker        build + push to ECR"
-	@echo "  make deploy-api deploy-worker    push + force a new ECS deployment"
+	@echo "  make build-api build-worker build-poller     docker build only"
+	@echo "  make push-api push-worker push-poller        build + push to ECR"
+	@echo "  make deploy-api deploy-worker deploy-poller  push + force a new ECS deployment"
 	@echo ""
-	@echo "Demo lifecycle (apps/api + apps/worker on ECS):"
-	@echo "  make start                       desired_count=1 for both"
-	@echo "  make stop / make pause           desired_count=0 for both (aliases)"
+	@echo "Demo lifecycle (apps/api + apps/worker + apps/poller on ECS):"
+	@echo "  make start                       desired_count=1 for all three"
+	@echo "  make stop / make pause           desired_count=0 for all three (aliases)"
 	@echo "  make restart                     stop then start"
 	@echo "  make status                      ECS service status + HF Space status"
 	@echo "  make ip                          current public IP of the running apps/api task"
-	@echo "  make logs-api / make logs-worker tail CloudWatch logs"
+	@echo "  make logs-api / logs-worker / logs-poller    tail CloudWatch logs"
+	@echo ""
+	@echo "  NOTE: apps/poller shares this lifecycle, so it polls only while the"
+	@echo "        stack is up — a day it was down is a gap in the corpus time"
+	@echo "        series that cannot be backfilled (see ecs.tf). It also"
+	@echo "        crash-loops until apps/poller/seeds/channels.yaml is curated."
 	@echo ""
 	@echo "Redis (design spec §4):"
 	@echo "  make redis-check                 confirm noeviction (needs REDIS_URL env)"
@@ -122,6 +131,12 @@ build-api:
 build-worker:
 	docker build -f infra/deploy/worker/Dockerfile -t $(PROJECT)-worker:latest .
 
+# The seed frame ships inside this image, so re-curating
+# apps/poller/seeds/channels.yaml means rebuilding and redeploying — it is not
+# a config change (infra/deploy/poller/Dockerfile).
+build-poller:
+	docker build -f infra/deploy/poller/Dockerfile -t $(PROJECT)-poller:latest .
+
 push-api: build-api
 	registry="$(ECR_API)"; registry="$${registry%%/*}"; \
 	aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin "$$registry"
@@ -134,6 +149,12 @@ push-worker: build-worker
 	docker tag $(PROJECT)-worker:latest $(ECR_WORKER):latest
 	docker push $(ECR_WORKER):latest
 
+push-poller: build-poller
+	registry="$(ECR_POLLER)"; registry="$${registry%%/*}"; \
+	aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin "$$registry"
+	docker tag $(PROJECT)-poller:latest $(ECR_POLLER):latest
+	docker push $(ECR_POLLER):latest
+
 deploy-api: push-api
 	aws ecs update-service --cluster $(CLUSTER) --service $(API_SERVICE) \
 		--force-new-deployment --region $(AWS_REGION) >/dev/null
@@ -144,21 +165,36 @@ deploy-worker: push-worker
 		--force-new-deployment --region $(AWS_REGION) >/dev/null
 	@echo "apps/worker: new image pushed, deployment forced."
 
+deploy-poller: push-poller
+	aws ecs update-service --cluster $(CLUSTER) --service $(POLLER_SERVICE) \
+		--force-new-deployment --region $(AWS_REGION) >/dev/null
+	@echo "apps/poller: new image pushed, deployment forced."
+
 # --- Demo lifecycle ----------------------------------------------------------
 
+# apps/poller rides this toggle with the other two. That keeps idle cost at
+# zero, and costs the corpus its daily cadence: the poller only polls while the
+# stack is up, and a missed day is a hole in the time series that cannot be
+# backfilled (ecs.tf's apps/poller comment, corpus spec §5c). If the corpus
+# ever needs to collect for real, lift the poller out of these two targets and
+# set its desired_count to 1 once.
 start:
 	aws ecs update-service --cluster $(CLUSTER) --service $(API_SERVICE) \
 		--desired-count 1 --region $(AWS_REGION) >/dev/null
 	aws ecs update-service --cluster $(CLUSTER) --service $(WORKER_SERVICE) \
 		--desired-count 1 --region $(AWS_REGION) >/dev/null
-	@echo "Starting apps/api + apps/worker. 'make status' to watch, 'make ip' once RUNNING."
+	aws ecs update-service --cluster $(CLUSTER) --service $(POLLER_SERVICE) \
+		--desired-count 1 --region $(AWS_REGION) >/dev/null
+	@echo "Starting apps/api + apps/worker + apps/poller. 'make status' to watch, 'make ip' once RUNNING."
 
 stop pause:
 	aws ecs update-service --cluster $(CLUSTER) --service $(API_SERVICE) \
 		--desired-count 0 --region $(AWS_REGION) >/dev/null
 	aws ecs update-service --cluster $(CLUSTER) --service $(WORKER_SERVICE) \
 		--desired-count 0 --region $(AWS_REGION) >/dev/null
-	@echo "Stopped apps/api + apps/worker (desired_count=0)."
+	aws ecs update-service --cluster $(CLUSTER) --service $(POLLER_SERVICE) \
+		--desired-count 0 --region $(AWS_REGION) >/dev/null
+	@echo "Stopped apps/api + apps/worker + apps/poller (desired_count=0)."
 
 restart: stop start
 
@@ -169,6 +205,10 @@ status:
 		--output table
 	@echo "== apps/worker =="
 	@aws ecs describe-services --cluster $(CLUSTER) --services $(WORKER_SERVICE) --region $(AWS_REGION) \
+		--query 'services[0].{status:status,desired:desiredCount,running:runningCount,pending:pendingCount}' \
+		--output table
+	@echo "== apps/poller =="
+	@aws ecs describe-services --cluster $(CLUSTER) --services $(POLLER_SERVICE) --region $(AWS_REGION) \
 		--query 'services[0].{status:status,desired:desiredCount,running:runningCount,pending:pendingCount}' \
 		--output table
 	@echo "== apps/ml (HF Space) =="
@@ -193,6 +233,9 @@ logs-api:
 
 logs-worker:
 	aws logs tail $(LOG_GROUP_WORKER) --follow --region $(AWS_REGION)
+
+logs-poller:
+	aws logs tail $(LOG_GROUP_POLLER) --follow --region $(AWS_REGION)
 
 # --- Redis -------------------------------------------------------------------
 

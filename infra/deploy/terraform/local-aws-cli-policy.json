@@ -19,7 +19,8 @@
       ],
       "Resource": [
         "arn:aws:ecr:eu-south-2:206550328009:repository/resonance-api",
-        "arn:aws:ecr:eu-south-2:206550328009:repository/resonance-worker"
+        "arn:aws:ecr:eu-south-2:206550328009:repository/resonance-worker",
+        "arn:aws:ecr:eu-south-2:206550328009:repository/resonance-poller"
       ]
     },
     {
@@ -41,7 +42,8 @@
       ],
       "Resource": [
         "arn:aws:ecr:eu-south-2:206550328009:repository/resonance-api",
-        "arn:aws:ecr:eu-south-2:206550328009:repository/resonance-worker"
+        "arn:aws:ecr:eu-south-2:206550328009:repository/resonance-worker",
+        "arn:aws:ecr:eu-south-2:206550328009:repository/resonance-poller"
       ]
     },
     {

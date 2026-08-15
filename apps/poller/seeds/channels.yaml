@@ -36,4 +36,14 @@
 #     rationale: "Posts 3-5 Shorts a week with visibly variable reach; not a repost account."
 
 version: 1
-channels: []
+channels:
+  - id: UCJYn7vc5OX5MnCepcCXHdlA
+    handle: '@ExploredTravel'
+    niche: travel
+    tier: mid
+    rationale: 'Posts 3-5 Shorts a week; recent view counts spread 10x, so there is an ordering to rank.'
+  - id: UCJYn7vc5OX5MnCepcCXHdlA
+    handle: '@ayhansicimoglu'
+    niche: food
+    tier: mid
+    rationale: 'Latin music, travel, culture, cuisine, history, and sailing adventures across Europe and beyond'

@@ -22,6 +22,11 @@ resource "aws_cloudwatch_log_group" "worker" {
   retention_in_days = var.log_retention_days
 }
 
+resource "aws_cloudwatch_log_group" "poller" {
+  name              = "/ecs/${var.project}/poller"
+  retention_in_days = var.log_retention_days
+}
+
 # --- apps/api ------------------------------------------------------------
 
 resource "aws_ecs_task_definition" "api" {
@@ -195,6 +200,103 @@ resource "aws_ecs_service" "worker" {
     subnets = data.aws_subnets.default.ids
     # No ingress rule needed, but the task still needs the shared SG for its
     # outbound rule (Redis, Postgres, Anthropic).
+    security_groups  = [aws_security_group.app.id]
+    assign_public_ip = true
+  }
+
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+}
+
+# --- apps/poller ------------------------------------------------------------
+# The corpus collector. Like the worker: no portMappings, no healthCheck, no
+# ingress rule — it holds BYPASSRLS and has no HTTP surface by construction.
+#
+# TWO THINGS TO KNOW BEFORE STARTING IT.
+#
+# 1. IT SHARES THE DEMO LIFECYCLE. `make start` / `make stop` toggle this
+#    service alongside api and worker, so it polls only on the days the demo
+#    stack is up. That is a deliberate choice (cost: nothing runs idle) with a
+#    real cost of its own: the corpus spec's §5c cadence assumes a daily poll,
+#    and a day the service was down is a hole in a time series that CANNOT be
+#    backfilled — YouTube serves current counts, not historical ones. The
+#    maturation parameter needs ~14 days of observations before any label
+#    exists, so a sparsely-run poller lengthens that wall-clock considerably.
+#    Moving it to always-on later is a one-line change: drop it from the
+#    Makefile's start/stop targets and set its desired_count to 1 once.
+#
+# 2. IT CRASH-LOOPS UNTIL THE SEED FRAME IS CURATED. `loadSeeds()` throws at
+#    boot while `apps/poller/seeds/channels.yaml` is empty, on purpose — a
+#    poller running against an empty frame looks healthy in every dashboard and
+#    collects nothing. Until that file has channels in it and the image has
+#    been rebuilt, expect this task to restart in a loop when started.
+
+resource "aws_ecs_task_definition" "poller" {
+  family                   = "${var.project}-poller"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = var.poller_cpu
+  memory                   = var.poller_memory
+  execution_role_arn       = aws_iam_role.execution.arn
+
+  # ARM64, matching api and worker — see the api task definition's
+  # runtime_platform comment. All three build from one host, so a split
+  # architecture would mean emulating one of the images.
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "ARM64"
+  }
+
+  container_definitions = jsonencode([
+    {
+      name      = "poller"
+      image     = "${aws_ecr_repository.poller.repository_url}:latest"
+      essential = true
+
+      # The maximum ECS allows. A full poll is ~40 channels of sequential HTTP
+      # and can outlast even this — but being SIGKILLed mid-poll is safe here,
+      # which is the point of the design rather than a tolerated risk:
+      # `capturedAt` is quantised to the UTC day (`resolveRunAt`) and snapshot
+      # appends use `skipDuplicates` against `@@unique([postId, capturedAt])`,
+      # so the next run re-does the same work under the same keys and the
+      # partial write is absorbed instead of duplicated.
+      stopTimeout = 120
+
+      environment = [
+        { name = "CORPUS_REPORT_DIR", value = var.corpus_report_dir },
+      ]
+
+      # Same BYPASSRLS credential as apps/worker: `corpus` tables carry RLS
+      # forced with ZERO policies, so no other role can read or write them.
+      secrets = [
+        { name = "REDIS_URL", valueFrom = aws_ssm_parameter.redis_url.arn },
+        { name = "APP_SERVICE_DATABASE_URL", valueFrom = aws_ssm_parameter.app_service_database_url.arn },
+        { name = "YOUTUBE_API_KEY", valueFrom = aws_ssm_parameter.youtube_api_key.arn },
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.poller.name
+          "awslogs-region"        = data.aws_region.current.name
+          "awslogs-stream-prefix" = "poller"
+        }
+      }
+    }
+  ])
+}
+
+resource "aws_ecs_service" "poller" {
+  name            = "${var.project}-poller"
+  cluster         = aws_ecs_cluster.this.id
+  task_definition = aws_ecs_task_definition.poller.arn
+  desired_count   = var.initial_desired_count
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets = data.aws_subnets.default.ids
+    # Outbound only — Redis, Postgres, and googleapis.com.
     security_groups  = [aws_security_group.app.id]
     assign_public_ip = true
   }

@@ -43,13 +43,23 @@ Interop is free, not bridged: the `bullmq` PyPI package is the official port and
 scripts** as the npm one. Payload contract lives in `packages/queue/src/contract.ts`, mirrored by
 hand in `apps/ml/queue_contract.py` — **change one, change the other.**
 
+### The corpus path — the same shape, mirrored
+
+`apps/poller` runs a second, symmetric pair for the research corpus:
+`[corpus]` → `apps/ml` → `[corpus-results]` → `apps/poller` → `corpus.scores`. Two queues rather
+than reusing `analysis`, so corpus results never touch `analysis_results` and a backfill cannot
+delay a customer job — but **one `engine.py`**, because a separate queue is not a separate inference
+path: if corpus features were reduced by different code, the backtest would silently stop describing
+the product. `worker.py` consumes both queues behind one GPU semaphore (`ML_QUEUES=corpus` runs a
+backfill-only box). The composite itself lives in `@repo/scoring`, imported by both writers.
+
 ## Layout
 
 ```
 apps/    mobile (Expo RN) · web (Next.js, later) · api (Bun+Hono BFF) · ml (Python FastAPI + BullMQ worker) · worker (Bun, results → Postgres) · poller (Bun, YouTube corpus → corpus schema)
-packages/ db (Prisma) · queue (BullMQ contract) · api-contract (Hono RPC client) · tsconfig (@repo/tsconfig) · eslint-config (@repo/eslint-config) · ml-client (empty placeholder — the queue replaced the HTTP seam it was for; see its README)
+packages/ db (Prisma) · queue (BullMQ contract) · scoring (the shared band→composite reduction) · api-contract (Hono RPC client) · tsconfig (@repo/tsconfig) · eslint-config (@repo/eslint-config) · ml-client (empty placeholder — the queue replaced the HTTP seam it was for; see its README)
 infra/   docker (local Redis + bull-board) · deploy
-research/ eval harness for the pre-registered validation experiment (Python island, never deploys)
+research/ eval harness for the pre-registered validation experiment + the corpus extract (Python island, never deploys)
 ```
 
 ## Code discovery — query the index FIRST
@@ -133,7 +143,13 @@ cd apps/api    && bun run dev        # API → http://localhost:3000/health
 cd apps/worker && bun run dev        # results → Postgres
 cd apps/ml     && python worker.py   # GPU consumer
 
-cd apps/poller && bun run dev        # the corpus poller (needs a curated seeds/channels.yaml)
+# the corpus path (independent of the above; needs a curated seeds/channels.yaml)
+cd apps/poller && bun run dev        # scheduler + [corpus-results] consumer
+
+# the corpus backtest, once there is something to extract
+cd research && .venv/bin/python -m eval extract --dsn "$APP_SERVICE_DATABASE_URL" \
+  --out snapshots/corpus-primary --outcome views_at_Nd --n-days 14 --phase 1
+cd research && .venv/bin/python -m eval run --snapshot snapshots/corpus-primary --out out/corpus-primary
 ```
 
 `apps/ml` is a **Python island** (no `package.json`, so Bun/Turbo ignore it by design) — run it via
@@ -222,8 +238,34 @@ fixture that catches api↔ml contract drift — **but no real clip has run thro
 end to end — snapshot contract, synthetic ground-truth worlds, splits with the prereg's leakage
 rules as runtime assertions, the B0–B4 ladder, bootstrap + paired Wilcoxon, three negative controls
 that gate the run, and a mechanically-computed GREEN/YELLOW/RED verdict written to
-`results.json` + `report.md`. 164 tests. **No real cohort has ever run through it** — every number
+`results.json` + `report.md`. 204 tests. **No real cohort has ever run through it** — every number
 it has produced came from a world whose ground truth it generated itself.
+
+**Corpus poller (done, collecting nothing yet):** `apps/poller` builds a corpus of public YouTube
+Shorts (≤30 s) and their engagement over time, so the shipped composite can be ranked against
+realised reach. It lives in its own `corpus` Postgres schema — six tables, **RLS enabled and forced
+with ZERO policies**, which denies every role but `app_service` and is stricter than a workspace
+policy (the one documented departure from "every table gets a policy rooted at `workspace_id`";
+`db:check-rls` now fails on any client-role grant reaching `corpus`). Three repeatable BullMQ jobs:
+a daily poll, a nightly 30-day text sweep, and a weekly readiness report. `packages/scoring` holds
+the composite that `apps/worker` and `apps/poller` now share — a separate queue is not a separate
+inference path, so a `[corpus]`/`[corpus-results]` pair mirrors the analysis path into the **same**
+`engine.py`. `research/eval/extract.py` is the second producer of the snapshot format, so every
+downstream stage runs unmodified, and `eval/zeroshot.py` reports the un-fitted headline (the shipped
+composite vs realised reach, within creator, nothing trained). See
+[`apps/poller/README.md`](apps/poller/README.md).
+
+**Three things it is not.** It is **not the pre-registered experiment** — the prereg locks
+`averageViewPercentage`, a YouTube _Analytics_ metric only a channel owner can read, so every
+corpus snapshot declares itself a secondary exploratory analysis in its own manifest and the report
+is titled from that (structural, not editorial: there is no invocation that produces a prereg-titled
+report from corpus data). It is **not collecting** — `apps/poller/seeds/channels.yaml` is empty and
+the poller refuses to boot until it is curated by hand, which is deliberate: a poller running
+against an empty frame looks healthy in every dashboard. And it **acquires no video** — spec §7's
+`SourceResolver` has one implementation that resolves nothing, so `corpus.clips` stays empty and no
+GPU work is queued until that decision is made deliberately. Everything is unit-tested on both sides
+of the queue, including a Pydantic-generated fixture that catches api↔ml contract drift; **no real
+channel has been polled.**
 
 ## TODO
 
@@ -242,6 +284,12 @@ it has produced came from a world whose ground truth it generated itself.
    `ML_RECORD_DIR` — three unknowns for one GPU-minute.
 3. **Run the upload→analyze flow on-device** against a live GPU worker.
 4. **Run the YouTube connect flow** against real Google credentials + Supabase Google login.
+5. **Curate `apps/poller/seeds/channels.yaml`.** The corpus collects nothing until ~40 channels are
+   in that file, and the maturation parameter needs ~14 days of observations after that before a
+   single label exists — so this is the item with a wall clock attached. It is hand work by design:
+   the criterion no automated discovery can check is **variance** (a channel whose Shorts all land
+   in a narrow band contributes nothing, because there is no ordering to rank). Criteria are in the
+   file's own header. Note (1) above sits upstream of every axis number this corpus would produce.
 
 **Product surfaces that are specified but absent.** Each is promised in `docs/` and has no code:
 
@@ -269,18 +317,35 @@ it has produced came from a world whose ground truth it generated itself.
   cohort lands the harness runs. What remains is acquisition. See
   `docs/validation-experiment-spec.md` §11a: YouTube gives no source video files, so the corpus
   needs a paid or design-partner motion, not an ask.
+- **Corpus source files** (`apps/poller/src/source-resolver.ts`, corpus spec §7) — TRIBE needs the
+  video and the Data API does not provide one. Deferred behind a seam that resolves nothing, and
+  cheaply so: `status.license` rides along on a call already being made, so the weekly readiness
+  report answers "do enough channels have ≥20 CC-BY Shorts under 30 s?" as a standing number rather
+  than a research exercise. Note for whoever decides it: a CC-BY licence settles the **copyright**
+  question and not the **ToS** one, and those are routinely conflated.
 
-**`apps/api` + `apps/worker` deploy (code-complete, unverified against a real AWS account):**
-`infra/deploy/{api,worker}/Dockerfile` (Bun multi-stage, `turbo prune --docker` — both build and run
-locally against real Redis + Supabase credentials) and `infra/deploy/terraform/` (ECS Fargate, no
-ALB/NAT, SSM-parameter secrets) target AWS, provisioned on demand for investor demos rather than
-continuously — see `docs/superpowers/specs/2026-08-09-deploy-api-worker-design.md`. Production Redis
-is a free Render Key Value instance shared by all three processes; `noeviction` is required and is
-**not** stated as that plan's default, so `make redis-check` must confirm it before the first real
-job crosses it. The root `Makefile` drives the lifecycle (`make start` / `stop` / `deploy-api` / …).
+**`apps/api` + `apps/worker` + `apps/poller` deploy (code-complete, unverified against a real AWS
+account):** `infra/deploy/{api,worker,poller}/Dockerfile` (Bun multi-stage, `turbo prune --docker` —
+all three build locally; api and worker also run locally against real Redis + Supabase credentials)
+and `infra/deploy/terraform/` (ECS Fargate, no ALB/NAT, SSM-parameter secrets) target AWS,
+provisioned on demand for investor demos rather than continuously — see
+`docs/superpowers/specs/2026-08-09-deploy-api-worker-design.md`. Production Redis is a free Render
+Key Value instance shared by all four processes; `noeviction` is required and is **not** stated as
+that plan's default, so `make redis-check` must confirm it before the first real job crosses it. The
+root `Makefile` drives the lifecycle (`make start` / `stop` / `deploy-api` / …).
 **Nothing here has run `terraform apply` against a real account yet** — that, plus the Google OAuth
 redirect URI (a Fargate task's public IP is not stable without an added Route 53 record, §3/§10 of
 the spec) and the ECS `stopTimeout` value, are the open items before the first real demo.
+
+**`apps/poller` shares that on-demand lifecycle, and that is a known tension, not an oversight.**
+`make start`/`stop` toggle it with the other two, so it polls only while the demo stack is up — but
+the corpus design assumes a **daily** poll, and a day the service was down is a hole in a time
+series that cannot be backfilled (the Data API serves current counts, not historical ones). Idle
+cost is zero, and the price is that the corpus collects sparsely. Lifting it out is a one-line
+change in the `Makefile`'s `start`/`stop` targets plus a single `desired_count=1`; make it before
+treating any corpus N as a real sample size. Also: the seed frame ships **inside** the image, so
+re-curating `seeds/channels.yaml` is `make deploy-poller`, not a config change, and the task
+crash-loops until that file has channels in it.
 
 **Also queued:** the ml worker's own deploy image (Hugging Face Space, already working — a separate,
 smaller decision, see the spec's §9); Instagram/TikTok `PlatformProvider`s; Facebook/TikTok login
@@ -300,6 +365,11 @@ becomes real if something in the TS layer needs a synchronous call into `apps/ml
   import them from `@repo/db/enums` (a leaf module, browser-safe) — never from the `@repo/db` barrel,
   which drags `client.ts` into the Expo/Next typecheck.
 - **Adding a package or app?** Use the `add-package` skill (`.claude/skills/`).
+- **Touching the corpus?** `corpus` tables are reachable only by `app_service` and carry RLS forced
+  with **zero policies** — the documented exception to the policy rule below, because they have no
+  tenant to root one at. Never grant `anon`/`authenticated` anything there; `db:check-rls` fails the
+  build if you do. The composite lives in `@repo/scoring` and must not be re-implemented: one
+  definition, two writers.
 - **Touching the queue?** Payload shapes live in `packages/queue/src/contract.ts` and are mirrored by
   hand in `apps/ml/queue_contract.py` — change both. Prefer `.nullish()` over `.optional()` in the
   zod schemas: Pydantic serialises an unset field as `null`, which `.optional()` rejects.

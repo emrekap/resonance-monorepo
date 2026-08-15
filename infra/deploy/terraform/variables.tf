@@ -42,6 +42,20 @@ variable "worker_memory" {
   default = 512
 }
 
+# The poller is the most I/O-bound of the three: it sleeps on a cron and then
+# makes ~120 sequential HTTPS calls (3 per channel x ~40 channels). It never
+# decodes media and never touches the GPU path, so the smallest tier is not
+# just a starting point here — it is almost certainly the ceiling too.
+variable "poller_cpu" {
+  type    = number
+  default = 256
+}
+
+variable "poller_memory" {
+  type    = number
+  default = 512
+}
+
 # --- Desired count --------------------------------------------------------
 # This is the ONLY value the `make start` / `make stop` toggle (design spec
 # §11) changes, and it changes it via `aws ecs update-service`, not Terraform.
@@ -137,4 +151,36 @@ variable "anthropic_api_key" {
   type        = string
   sensitive   = true
   default     = ""
+}
+
+# --- apps/poller configuration ---------------------------------------------
+# Mirrors apps/poller/.env.example. REDIS_URL and APP_SERVICE_DATABASE_URL are
+# reused from the variables above — the poller shares Redis with all three
+# processes and connects as the same BYPASSRLS role apps/worker does, because
+# `corpus` tables carry RLS forced with zero policies and no other credential
+# can reach them at all.
+
+variable "youtube_api_key" {
+  description = <<-EOT
+    YouTube Data API v3 key — a plain API key, NOT the OAuth client in
+    apps/api: the poller reads public data only and never acts for a user.
+    Required; unlike anthropic_api_key there is no degraded mode, because a
+    poller that cannot call the Data API has nothing to do.
+  EOT
+  type        = string
+  sensitive   = true
+}
+
+variable "corpus_report_dir" {
+  description = <<-EOT
+    Where the weekly readiness report is written inside the container.
+
+    Fargate task storage is EPHEMERAL — the file is gone when the task stops,
+    which for a demo-lifecycle service is every time you `make stop`. The
+    numbers that matter (N and its phase, channels clearing each floor) are
+    also emitted as a single log line by `runReadiness`, so CloudWatch is the
+    durable copy until someone decides this deserves S3.
+  EOT
+  type        = string
+  default     = "/tmp/corpus-reports"
 }
